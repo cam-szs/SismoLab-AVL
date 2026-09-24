@@ -1,6 +1,6 @@
 """[STUB - team must implement] Event association service."""
 
-from sismolab_avl.domain.event import Association, Event
+from domain.event import Association, Event
 
 
 class AssociationService:

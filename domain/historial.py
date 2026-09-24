@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from sismolab_avl.domain.event import Report
+from domain.event import Report
 
 
 @dataclass

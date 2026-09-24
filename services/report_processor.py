@@ -1,7 +1,7 @@
 """[STUB - team must implement] Report queue and state-machine service."""
 
-from sismolab_avl.domain.event import Report
-from sismolab_avl.domain.queue_fifo import ReportQueue
+from domain.event import Report
+from domain.queue_fifo import ReportQueue
 
 
 class ReportProcessor:

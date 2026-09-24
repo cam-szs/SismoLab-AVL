@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from sismolab_avl.domain.event import Station, Zone
+from domain.event import Station, Zone
 
 
 @dataclass

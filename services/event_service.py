@@ -1,6 +1,6 @@
 """[STUB - team must implement] Event lifecycle service."""
 
-from sismolab_avl.domain.event import Event
+from domain.event import Event
 
 
 class EventService:

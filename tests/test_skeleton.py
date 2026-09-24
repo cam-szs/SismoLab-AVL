@@ -1,7 +1,7 @@
 """[BOILERPLATE - implemented] Minimal smoke tests for mechanical utilities."""
 
-from sismolab_avl.domain.queue_fifo import ReportQueue
-from sismolab_avl.domain.undo_stack import UndoStack
+from domain.queue_fifo import ReportQueue
+from domain.undo_stack import UndoStack
 
 
 def test_report_queue_is_fifo() -> None:

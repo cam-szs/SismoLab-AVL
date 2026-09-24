@@ -1,6 +1,6 @@
 """[STUB - team must implement] Archive and recovery service."""
 
-from sismolab_avl.domain.event import Report
+from domain.event import Report
 
 
 class ArchiveService:
