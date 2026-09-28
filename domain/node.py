@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from event import EventKey  # adjust to the module where EventKey lives
+from .event_key import EventKey
 
 
 class Node:

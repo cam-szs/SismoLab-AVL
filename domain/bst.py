@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, Tuple
 
-from node import Node
-from event_key import EventKey  # adjust to your module names
+from .event_key import EventKey
+from .node import Node
 
 
 class DuplicateKeyError(Exception):
@@ -169,6 +169,10 @@ class BSTree:
             if node.right:
                 queue.append(node.right)
         return out
+
+    def bread_first_search(self) -> List[Node]:
+        """Return nodes in breadth-first order for API compatibility."""
+        return self.level_order()
 
     # ---------- metrics ----------
 

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, FrozenSet, Optional
 
-from event_key import EventKey  # adjust to the module where EventKey lives
+from .event_key import EventKey
 
 
 class AttentionStatus(str, Enum):
