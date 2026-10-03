@@ -18,3 +18,13 @@ For each contribution, record the date, files, request, result, human review, an
 ## Student-owned work
 
 The students must implement the AVL/BST algorithms, event rules, report state machine, associations, archive/recovery, persistence validation, undo/version behavior, and the mandatory test cases. AI may explain or review these areas, but the implementation and defense preparation should be done by the students and recorded here whenever assistance is used.
+
+## Additional contribution
+
+- **Date:** 2026-10-03
+- **Scope:** BST contract cleanup and scope clarification for duplicate-key handling.
+- **Files:** `domain/bst.py`, `docs/AI_CONTRIBUTIONS.md`.
+- **Request:** clarify the real project rule for duplicate event IDs, remove the misleading default `event=None` insertion path, and clean up the breadth-first alias so the API naming does not hide a duplicate method.
+- **Result:** `DuplicateKeyError` is documented as an internal structural guard, not as the business-level validation for duplicate identifiers; `insert()` now requires a real event payload; and the tree exposes a single canonical breadth-first traversal name.
+- **Human review required:** confirm that id uniqueness checks belong in the service-layer index before any AVL/BST insert, and that the tree remains a structural primitive rather than the place where business validation happens.
+- **Owner for understanding:** all three teammates; the team must explain to the group that `id` uniqueness is enforced before calling `tree.insert()` even when the key changes due to priority or magnitude updates.

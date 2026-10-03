@@ -8,7 +8,12 @@ from .node import Node
 
 
 class DuplicateKeyError(Exception):
-    """Raised when inserting a key that already exists in the tree."""
+    """Raised when a full BST key already exists in the tree.
+
+    This is an internal structural guard, not the project-level validation for
+    "event-id already exists". The business rule is enforced at the service
+    layer by checking an id -> Event index before calling tree.insert().
+    """
 
 
 _MISSING = object()  # sentinel: "key not found" (an event may legitimately be None)
@@ -38,7 +43,12 @@ class BSTree:
 
     # ---------- insert ----------
 
-    def insert(self, key: EventKey, event: Any = None) -> None:
+    def insert(self, key: EventKey, event: Any) -> None:
+        """Insert a real event under a valid tree key.
+
+        The business rule "id already exists" is validated before this method is
+        called by the service layer; this method only guards the tree invariant.
+        """
         self.root = self._insert(self.root, key, event)  # raises before size changes
         self.size += 1
 
@@ -170,8 +180,12 @@ class BSTree:
                 queue.append(node.right)
         return out
 
-    def bread_first_search(self) -> List[Node]:
-        """Return nodes in breadth-first order for API compatibility."""
+    def breadth_first_search(self) -> List[Node]:
+        """Return nodes in breadth-first order.
+
+        This is the canonical breadth-first alias; the typoed variant is not
+        kept because it duplicates the same behavior and adds ambiguity.
+        """
         return self.level_order()
 
     # ---------- metrics ----------
