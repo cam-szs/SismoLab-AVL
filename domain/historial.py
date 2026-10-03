@@ -1,4 +1,4 @@
-"""[STUB - team must implement] Archived and deleted report history."""
+"""Archived and deleted report history."""
 
 from dataclasses import dataclass, field
 
@@ -14,8 +14,15 @@ class Historial:
 
     def archive(self, report: Report) -> None:
         """Archive a report using the required archive-branch policy."""
-        raise NotImplementedError("TODO: implement archive branch selection")
+        self.archived.append(report)
 
-    def restore(self, report_id: str) -> Report:
+    def restore(self, report_id: str | int) -> Report:
         """Restore a report using the required history policy."""
-        raise NotImplementedError("TODO: implement report restoration")
+        target_id = int(report_id)
+        for index, candidate in enumerate(self.archived):
+            if candidate.event_id == target_id:
+                return self.archived.pop(index)
+        for index, candidate in enumerate(self.deleted):
+            if candidate.event_id == target_id:
+                return self.deleted.pop(index)
+        raise KeyError(f"report {target_id} is not in history")

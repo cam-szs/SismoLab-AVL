@@ -81,6 +81,14 @@ class ReportProcessor:
         self.archived_events[event_id] = event
         return event
 
+    def recover(self, event_id: int) -> Event:
+        """Bring a previously archived event back into the active catalog."""
+        if event_id not in self.archived_events:
+            raise KeyError(f"event {event_id} is not archived")
+        event = self.archived_events.pop(event_id)
+        self.active_events[event_id] = event
+        return event
+
     def delete(self, event_id: int) -> Event:
         """Retire one active event so later reports cannot reactivate it."""
         event = self.active_events.pop(event_id)

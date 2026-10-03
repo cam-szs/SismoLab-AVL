@@ -15,6 +15,17 @@ class AttentionStatus(str, Enum):
     REVIEWED = "reviewed"
 
 
+@dataclass(frozen=True)
+class Association:
+    """Describe a relationship between a source event and a candidate reference."""
+
+    source_id: int
+    reference_id: int
+    time_hours: float
+    distance_km: float
+    is_reference: bool = False
+
+
 def _to_tenths(value: float, name: str) -> int:
     """Convert a decimal with at most one decimal place to integer tenths."""
     if not isinstance(value, (int, float)) or isinstance(value, bool):

@@ -142,6 +142,71 @@ h2 {
 .metric span {
   color: #648073;
 }
+.scenario-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 26px;
+}
+.state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+.action-button {
+  border: none;
+  border-radius: 10px;
+  background: #1b3a35;
+  color: #eef4ed;
+  padding: 11px 16px;
+  font:
+    500 12px "DM Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.action-button.secondary {
+  background: #d65a3d;
+}
+.scenario-card {
+  background: #f3f6f1;
+  border: 1px solid #c5d1c8;
+  border-radius: 3px;
+  padding: 22px;
+}
+.mode-switcher,
+.clock-actions {
+  margin-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.mode-switcher button,
+.clock-actions button {
+  border: 1px solid #b7c7bf;
+  background: #fff;
+  color: #17211f;
+  font:
+    500 13px "DM Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  padding: 10px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.mode-switcher button:hover,
+.clock-actions button:hover {
+  border-color: #d65a3d;
+  color: #d65a3d;
+}
+.mode-switcher button.active {
+  background: #1b3a35;
+  border-color: #1b3a35;
+  color: #f5f8f5;
+}
 .workspace-grid {
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr;
@@ -171,7 +236,132 @@ h2 {
   font-family: "DM Mono", monospace;
   font-size: 12px;
 }
+.empty-state.compact {
+  height: auto;
+  margin-top: 18px;
+}
+.report-form {
+  margin-top: 18px;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.field-grid label {
+  display: grid;
+  gap: 6px;
+  font:
+    500 10px "DM Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #648073;
+}
+.field-grid input {
+  border: 1px solid #c5d1c8;
+  background: #fff;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font:
+    500 14px "Space Grotesk",
+    sans-serif;
+  color: #17211f;
+}
+.submit-report {
+  margin-top: 12px;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  background: #1b3a35;
+  color: #eef4ed;
+  padding: 11px 14px;
+  font:
+    500 12px "DM Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.process-report {
+  margin-top: 18px;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  background: #d65a3d;
+  color: #fff;
+  padding: 11px 14px;
+  font:
+    500 12px "DM Mono",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.event-list,
+.queue-list {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+}
+.event-item,
+.queue-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #e7efe8;
+  border: 1px solid #c5d1c8;
+}
+.event-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.event-item-header > div {
+  display: grid;
+  gap: 4px;
+}
+.event-item strong,
+.queue-item strong {
+  font-size: 0.95rem;
+}
+.event-item span,
+.event-item small,
+.queue-item span,
+.queue-item small {
+  color: #506c61;
+  font-family: "DM Mono", monospace;
+}
+.archive-button,
+.recover-button {
+  border: none;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font:
+    500 10px "DM Mono",
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.archive-button {
+  background: rgba(214, 90, 61, 0.12);
+  color: #8e3d2d;
+}
+.recover-button {
+  background: rgba(52, 118, 90, 0.12);
+  color: #1b3a35;
+}
+.archive-panel {
+  margin-top: 18px;
+}
+.archive-card {
+  min-height: 220px;
+}
 .map-grid {
+  position: relative;
   height: 210px;
   margin-top: 26px;
   display: grid;
@@ -181,9 +371,46 @@ h2 {
     transparent 0 16px,
     #d6e1d7 17px 18px
   );
+  border: 1px solid #c5d1c8;
+  overflow: hidden;
 }
 .map-grid span {
   border: 1px solid #c5d1c8;
+}
+.map-point {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d65a3d;
+  border: 2px solid #f3f6f1;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 4px rgba(214, 90, 61, 0.15);
+}
+.association-list {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+.association-item {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #e7efe8;
+  border: 1px solid #c5d1c8;
+  font-family: "DM Mono", monospace;
+  color: #506c61;
+}
+.association-item strong,
+.association-item span,
+.association-item small {
+  font-family: "DM Mono", monospace;
+}
+.empty-association {
+  font-family: "DM Mono", monospace;
+  color: #91a59a;
+  font-size: 12px;
 }
 .error {
   margin-top: 22px;

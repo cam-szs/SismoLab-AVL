@@ -3,9 +3,13 @@
 from datetime import datetime, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 
+import api.app as app_module
+from api.app import app
 from domain.report import Report
 from domain.queue_fifo import ReportQueue
+from domain.scenario import Scenario
 from domain.undo_stack import UndoStack
 from services.report_processor import ReportProcessor
 
@@ -110,3 +114,253 @@ def test_report_processor_uses_inclusive_populated_zone_priority() -> None:
     processor = ReportProcessor(populated_zone=lambda candidate: candidate.event_id == 30)
 
     assert processor.calculate_priority(report) == 3
+
+
+def test_persistence_service_round_trips_and_merges_state(tmp_path) -> None:
+    from services.persistence_service import PersistenceService
+
+    payload = {
+        "status": "normal",
+        "metrics": {"active": 1, "archived": 0},
+        "events": [{"id": 7, "magnitude": 5.1}],
+    }
+    destination = tmp_path / "scenario.json"
+
+    service = PersistenceService()
+    service.export(destination, payload)
+    loaded = service.load(destination)
+
+    assert loaded == payload
+
+    merged = service.load(destination, mode="merge")
+    assert merged["status"] == "normal"
+    assert merged["metrics"]["active"] == 1
+
+    patched = {"metrics": {"archived": 1}, "status": "paused"}
+    merged = service.load(destination, mode="merge")
+    assert merged["status"] == "normal"
+    assert merged["metrics"]["active"] == 1
+
+    merge_result = service.merge_state(loaded, patched)
+    assert merge_result["status"] == "paused"
+    assert merge_result["metrics"]["active"] == 1
+    assert merge_result["metrics"]["archived"] == 1
+
+
+def test_history_tracks_archived_and_deleted_reports() -> None:
+    from domain.historial import Historial
+
+    historial = Historial()
+    report = make_report(70, 2, 6.5, "A")
+
+    historial.archive(report)
+    assert historial.archived[-1].event_id == 70
+
+    recovered = historial.restore(70)
+    assert recovered.event_id == 70
+    assert historial.archived == []
+
+    historial.deleted.append(report)
+    assert historial.restore(70).event_id == 70
+
+
+def test_archive_endpoints_update_history_and_active_catalog() -> None:
+    client = TestClient(app)
+
+    report_payload = {
+        "event_id": 201,
+        "magnitude": 5.4,
+        "depth_km": 18.0,
+        "x_km": 10.0,
+        "y_km": 20.0,
+        "station": "ST-10",
+        "revision": 1,
+    }
+
+    posted = client.post("/api/reports", json=report_payload)
+    assert posted.status_code == 200
+    assert client.post("/api/queue/process").status_code == 200
+
+    archived = client.post("/api/archive", json={"event_id": 201})
+    assert archived.status_code == 200
+    assert archived.json()["archived"] is True
+    assert archived.json()["event_id"] == 201
+
+    state = client.get("/api/state")
+    assert state.status_code == 200
+    assert state.json()["metrics"]["archived"] >= 1
+
+    recovered = client.post("/api/recover", json={"event_id": 201})
+    assert recovered.status_code == 200
+    assert recovered.json()["recovered"] is True
+
+
+def test_api_state_and_persistence_round_trip() -> None:
+    client = TestClient(app)
+
+    health = client.get("/api/health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+
+    state = client.get("/api/state")
+    assert state.status_code == 200
+    assert state.json()["status"] in {"scaffold", "ready"}
+
+    payload = {
+        "status": "paused",
+        "metrics": {"active": 1, "archived": 0},
+        "events": [{"id": 7, "magnitude": 5.1}],
+    }
+    saved = client.post("/api/persist", json={"state": payload, "path": "tmp_api_state.json"})
+    assert saved.status_code == 200
+    assert saved.json()["saved"] is True
+
+    loaded = client.post("/api/load", json={"path": "tmp_api_state.json"})
+    assert loaded.status_code == 200
+    assert loaded.json()["state"]["status"] == "paused"
+
+
+def test_api_load_rehydrates_queue_and_history() -> None:
+    client = TestClient(app)
+    app_module.REPORT_QUEUE = app_module.ReportQueue()
+    app_module.REPORT_PROCESSOR = app_module.ReportProcessor()
+
+    payload = {
+        "event_id": 300,
+        "magnitude": 6.1,
+        "depth_km": 18.0,
+        "x_km": 8.0,
+        "y_km": 12.0,
+        "station": "ST-30",
+        "revision": 1,
+    }
+    enqueue = client.post("/api/reports", json=payload)
+    assert enqueue.status_code == 200
+
+    process = client.post("/api/queue/process")
+    assert process.status_code == 200
+
+    archiving = client.post("/api/archive", json={"event_id": 300})
+    assert archiving.status_code == 200
+
+    snapshot = client.get("/api/state").json()
+    persisted = client.post("/api/persist", json={"state": snapshot, "path": "tmp_rehydrate_state.json"})
+    assert persisted.status_code == 200
+
+    app_module.REPORT_QUEUE = app_module.ReportQueue()
+    app_module.REPORT_PROCESSOR = app_module.ReportProcessor()
+
+    loaded = client.post("/api/load", json={"path": "tmp_rehydrate_state.json"})
+    assert loaded.status_code == 200
+    assert loaded.json()["state"]["history"]["archived"][0]["id"] == 300
+    assert client.get("/api/events").json()["count"] == 0
+
+
+def test_scenario_clock_and_mode_are_validated() -> None:
+    scenario = Scenario()
+
+    scenario.advance_clock(3)
+    assert scenario.clock == 3
+    assert scenario.values.get("clock") == 3
+
+    scenario.set_mode("r")
+    assert scenario.mode == "R"
+    assert scenario.values.get("previous_mode") == "W"
+
+    scenario.set_mode("L")
+    assert scenario.mode == "L"
+
+    with pytest.raises(ValueError, match="mode must be one of W, R, L, T"):
+        scenario.set_mode("X")
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        scenario.advance_clock(-1)
+
+    with pytest.raises(ValueError, match="non-negative integer"):
+        scenario.advance_clock(1.5)
+
+
+def test_scenario_api_exposes_clock_and_mode() -> None:
+    client = TestClient(app)
+
+    response = client.get("/api/scenario")
+    assert response.status_code == 200
+    assert response.json()["mode"] == "W"
+    assert response.json()["clock"] == 0
+
+    mode_response = client.post("/api/scenario/mode", json={"mode": "R"})
+    assert mode_response.status_code == 200
+    assert mode_response.json()["mode"] == "R"
+
+    clock_response = client.post("/api/scenario/clock", json={"amount": 2})
+    assert clock_response.status_code == 200
+    assert clock_response.json()["clock"] == 2
+
+    state_response = client.get("/api/state")
+    assert state_response.status_code == 200
+    assert state_response.json()["mode"] == "R"
+    assert state_response.json()["clock"] == 2
+
+
+def test_report_queue_api_accepts_new_reports() -> None:
+    client = TestClient(app)
+
+    payload = {
+        "event_id": 101,
+        "magnitude": 5.8,
+        "depth_km": 12.4,
+        "x_km": 10.0,
+        "y_km": 20.0,
+        "station": "ST-05",
+        "revision": 1,
+    }
+
+    posted = client.post("/api/reports", json=payload)
+    assert posted.status_code == 200
+    assert posted.json()["queued"] is True
+    assert posted.json()["report"]["event_id"] == 101
+
+    queued = client.get("/api/queue")
+    assert queued.status_code == 200
+    assert queued.json()["queue"][0]["event_id"] == 101
+    assert queued.json()["count"] == 1
+
+
+def test_association_api_returns_reference_links() -> None:
+    client = TestClient(app)
+    app_module.REPORT_QUEUE = app_module.ReportQueue()
+    app_module.REPORT_PROCESSOR = app_module.ReportProcessor()
+
+    base_time = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+    for payload in (
+        {
+            "event_id": 400,
+            "magnitude": 5.0,
+            "depth_km": 20.0,
+            "x_km": 0.0,
+            "y_km": 0.0,
+            "station": "ST-40",
+            "revision": 1,
+            "occurred_at": (base_time).isoformat(),
+        },
+        {
+            "event_id": 401,
+            "magnitude": 6.1,
+            "depth_km": 18.0,
+            "x_km": 8.0,
+            "y_km": 0.0,
+            "station": "ST-41",
+            "revision": 1,
+            "occurred_at": (base_time.replace(hour=9)).isoformat(),
+        },
+    ):
+        posted = client.post("/api/reports", json=payload)
+        assert posted.status_code == 200
+
+    assert client.post("/api/queue/process").status_code == 200
+    assert client.post("/api/queue/process").status_code == 200
+
+    response = client.get("/api/associations")
+    assert response.status_code == 200
+    assert response.json()["count"] >= 1
+    assert any(item["reference_id"] == 401 for item in response.json()["associations"])

@@ -25,7 +25,6 @@ In another terminal:
 ```powershell
 cd frontend
 npm install
-npm run dev
 ```
 
 The Vite development server uses `http://localhost:5173` and the API uses
