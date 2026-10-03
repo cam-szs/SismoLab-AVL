@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from domain.event import Report
+from domain.report import Report
 
 
 @dataclass

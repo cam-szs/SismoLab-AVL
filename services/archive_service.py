@@ -1,6 +1,6 @@
 """[STUB - team must implement] Archive and recovery service."""
 
-from domain.event import Report
+from domain.report import Report
 
 
 class ArchiveService:
