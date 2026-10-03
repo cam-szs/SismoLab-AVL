@@ -1,4 +1,8 @@
-"""Archive and recovery service."""
+"""Legacy archive facade.
+
+The live API uses ``ReportProcessor`` as the single source of truth. This
+small standalone facade remains for compatibility with older callers.
+"""
 
 from domain.historial import Historial
 from domain.report import Report

@@ -74,5 +74,6 @@ class EventService:
 
         current = self.active[event_id]
         updated = current.mark_reviewed()
+        self.tree.update_value(current.key, updated)
         self.active[event_id] = updated
         return updated

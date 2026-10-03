@@ -65,3 +65,16 @@ def test_delete_marks_id_as_removed_and_keeps_it_out_of_active_catalog() -> None
     assert service.get_active(9) is None
     assert 9 in service.deleted_ids
     assert service.tree.find(event.key) is None
+
+
+def test_mark_reviewed_updates_the_active_index_and_avl_value() -> None:
+    service = EventService()
+    event = _sample_event(12)
+    service.create(event)
+
+    reviewed = service.mark_reviewed(12)
+
+    assert reviewed.status.value == "reviewed"
+    assert service.get_active(12) == reviewed
+    assert service.tree.find(reviewed.key) == reviewed
+    assert service.tree.find(reviewed.key) is not event

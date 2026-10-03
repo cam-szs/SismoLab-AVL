@@ -36,3 +36,38 @@ def test_avl_inorder_is_sorted() -> None:
     keys = [key for key, _ in ordered]
     assert keys == sorted(keys)
     assert ordered[0][1] == "4"
+
+
+def test_stress_mode_defers_rotations_and_recovers() -> None:
+    tree = AVLTree[EventKey, str]()
+    tree.enable_stress_mode()
+
+    for event_id in range(1, 16):
+        key = EventKey(1, event_id, event_id)
+        tree.insert(key, str(event_id))
+
+    assert tree.stress_mode is True
+    assert tree.is_balanced() is False
+    assert tree.rotations_count == {
+        "single_left": 0,
+        "single_right": 0,
+        "double_left": 0,
+        "double_right": 0,
+    }
+
+    metrics = tree.recover_balance()
+
+    assert tree.is_balanced() is True
+    assert metrics["size"] == 15
+    assert [key.event_id for key, _ in tree.traverse_in_order()] == list(range(1, 16))
+
+
+def test_disabling_stress_mode_recovers_by_default() -> None:
+    tree = AVLTree[EventKey, str](stress_mode=True)
+    for event_id in range(1, 8):
+        tree.insert(EventKey(1, event_id, event_id), str(event_id))
+
+    tree.disable_stress_mode()
+
+    assert tree.stress_mode is False
+    assert tree.is_balanced() is True

@@ -14,8 +14,19 @@ class AssociationService:
         self.max_hours = max_hours
         self.max_distance_km = max_distance_km
 
-    def associate(self, source: Event, candidates: list[Event]) -> list[Association]:
+    def associate(
+        self,
+        source: Event,
+        candidates: list[Event],
+        *,
+        max_hours: float | None = None,
+        max_distance_km: float | None = None,
+    ) -> list[Association]:
         """Return all valid candidate links and mark the chosen reference event."""
+        hours_limit = self.max_hours if max_hours is None else max_hours
+        distance_limit = (
+            self.max_distance_km if max_distance_km is None else max_distance_km
+        )
         valid: list[tuple[Event, Association]] = []
         for candidate in candidates:
             if candidate.event_id == source.event_id:
@@ -26,13 +37,13 @@ class AssociationService:
                 continue
 
             hours = (source.occurred_at - candidate.occurred_at).total_seconds() / 3600
-            if hours > self.max_hours:
+            if hours > hours_limit:
                 continue
 
             dx = (candidate.x_tenths - source.x_tenths) / 10.0
             dy = (candidate.y_tenths - source.y_tenths) / 10.0
             distance = sqrt(dx * dx + dy * dy)
-            if distance > self.max_distance_km:
+            if distance > distance_limit:
                 continue
 
             valid.append(

@@ -170,6 +170,31 @@ h2 {
 .action-button.secondary {
   background: #d65a3d;
 }
+
+.file-action {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.file-action input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.action-button:disabled,
+.mode-switcher button:disabled,
+.clock-actions button:disabled,
+.submit-report:disabled,
+.process-report:disabled,
+.archive-button:disabled,
+.recover-button:disabled,
+.edit-button:disabled,
+.delete-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
 .scenario-card {
   background: #f3f6f1;
   border: 1px solid #c5d1c8;
@@ -206,6 +231,27 @@ h2 {
   background: #1b3a35;
   border-color: #1b3a35;
   color: #f5f8f5;
+}
+.parameter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.parameter-grid label {
+  display: grid;
+  gap: 4px;
+  color: #52615a;
+  font-size: 11px;
+}
+.parameter-grid input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #b7c7bf;
+  border-radius: 4px;
+  padding: 7px;
+  background: #fff;
+  color: #17211f;
 }
 .workspace-grid {
   display: grid;
@@ -323,6 +369,12 @@ h2 {
   display: grid;
   gap: 4px;
 }
+.event-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
 .event-item strong,
 .queue-item strong {
   font-size: 0.95rem;
@@ -353,6 +405,75 @@ h2 {
 .recover-button {
   background: rgba(52, 118, 90, 0.12);
   color: #1b3a35;
+}
+.edit-button,
+.delete-button {
+  border: none;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font: 500 10px "DM Mono", monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.edit-button {
+  background: rgba(244, 184, 91, 0.2);
+  color: #76521d;
+}
+.delete-button {
+  background: rgba(189, 69, 47, 0.12);
+  color: #8e3024;
+}
+.avl-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 18px;
+  color: #1b3a35;
+  font: 500 11px "DM Mono", monospace;
+}
+.avl-summary small {
+  color: #648073;
+}
+.avl-tree {
+  min-height: 90px;
+  margin-top: 12px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid #c5d1c8;
+  background: #e7efe8;
+  border-radius: 8px;
+}
+.avl-tree ul {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  min-width: max-content;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.avl-tree li {
+  position: relative;
+  padding: 5px;
+}
+.avl-tree li > ul {
+  margin-top: 12px;
+}
+.tree-node {
+  display: grid;
+  gap: 2px;
+  min-width: 86px;
+  padding: 7px;
+  border: 1px solid #8da99a;
+  border-radius: 8px;
+  background: #f3f6f1;
+  text-align: center;
+  font: 10px "DM Mono", monospace;
+}
+.tree-node span,
+.tree-node small {
+  color: #506c61;
 }
 .archive-panel {
   margin-top: 18px;

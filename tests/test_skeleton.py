@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import api.app as app_module
 from api.app import app
 from domain.report import Report
+from domain.historial import Historial
 from domain.queue_fifo import ReportQueue
 from domain.scenario import Scenario
 from domain.undo_stack import UndoStack
@@ -116,6 +117,41 @@ def test_report_processor_uses_inclusive_populated_zone_priority() -> None:
     assert processor.calculate_priority(report) == 3
 
 
+def test_report_processor_stress_mode_recovers_global_avl_balance() -> None:
+    queue = ReportQueue[Report]()
+    processor = ReportProcessor()
+    processor.set_stress_mode(True)
+
+    for event_id in range(1, 16):
+        queue.enqueue(make_report(event_id, 1, 4.0, f"S-{event_id}"))
+        processor.process_next(queue)
+
+    stressed = processor.tree_metrics()
+    assert stressed["stress_mode"] is True
+    assert stressed["balanced"] is False
+    assert stressed["rotations"] == 0
+
+    recovered = processor.recover_balance()
+
+    assert recovered["balanced"] is True
+    assert recovered["size"] == 15
+    assert processor.tree.find(processor.active_events[8].key) == processor.active_events[8]
+
+
+def test_report_processor_keeps_avl_value_in_sync_after_confirmation() -> None:
+    queue = ReportQueue[Report]()
+    processor = ReportProcessor()
+    queue.enqueue(make_report(50, 1, 4.8, "A"))
+    processor.process_next(queue)
+
+    queue.enqueue(make_report(50, 1, 4.8, "B"))
+    result = processor.process_next(queue)
+
+    assert result.event is not None
+    assert processor.tree.find(result.event.key) == result.event
+    assert processor.tree.find(result.event.key).stations == frozenset({"A", "B"})
+
+
 def test_persistence_service_round_trips_and_merges_state(tmp_path) -> None:
     from services.persistence_service import PersistenceService
 
@@ -146,6 +182,10 @@ def test_persistence_service_round_trips_and_merges_state(tmp_path) -> None:
     assert merge_result["metrics"]["active"] == 1
     assert merge_result["metrics"]["archived"] == 1
 
+    merged_from_file = service.load(destination, mode="merge", current=patched)
+    assert merged_from_file["status"] == "normal"
+    assert merged_from_file["metrics"]["active"] == 1
+
 
 def test_history_tracks_archived_and_deleted_reports() -> None:
     from domain.historial import Historial
@@ -160,7 +200,7 @@ def test_history_tracks_archived_and_deleted_reports() -> None:
     assert recovered.event_id == 70
     assert historial.archived == []
 
-    historial.deleted.append(report)
+    historial.delete(report)
     assert historial.restore(70).event_id == 70
 
 
@@ -263,14 +303,14 @@ def test_scenario_clock_and_mode_are_validated() -> None:
     assert scenario.clock == 3
     assert scenario.values.get("clock") == 3
 
-    scenario.set_mode("r")
-    assert scenario.mode == "R"
-    assert scenario.values.get("previous_mode") == "W"
+    scenario.set_mode("stress")
+    assert scenario.mode == "stress"
+    assert scenario.values.get("previous_mode") == "normal"
 
-    scenario.set_mode("L")
-    assert scenario.mode == "L"
+    scenario.set_parameters(W=24, R=20, L=4, T=96)
+    assert scenario.parameters == {"W": 24.0, "R": 20.0, "L": 4, "T": 96.0}
 
-    with pytest.raises(ValueError, match="mode must be one of W, R, L, T"):
+    with pytest.raises(ValueError, match="normal or stress"):
         scenario.set_mode("X")
 
     with pytest.raises(ValueError, match="non-negative integer"):
@@ -285,12 +325,12 @@ def test_scenario_api_exposes_clock_and_mode() -> None:
 
     response = client.get("/api/scenario")
     assert response.status_code == 200
-    assert response.json()["mode"] == "W"
+    assert response.json()["mode"] in {"normal", "stress"}
     assert response.json()["clock"] == 0
 
-    mode_response = client.post("/api/scenario/mode", json={"mode": "R"})
+    mode_response = client.post("/api/scenario/mode", json={"mode": "normal"})
     assert mode_response.status_code == 200
-    assert mode_response.json()["mode"] == "R"
+    assert mode_response.json()["mode"] == "normal"
 
     clock_response = client.post("/api/scenario/clock", json={"amount": 2})
     assert clock_response.status_code == 200
@@ -298,8 +338,68 @@ def test_scenario_api_exposes_clock_and_mode() -> None:
 
     state_response = client.get("/api/state")
     assert state_response.status_code == 200
-    assert state_response.json()["mode"] == "R"
+    assert state_response.json()["mode"] == "normal"
     assert state_response.json()["clock"] == 2
+
+
+def test_api_exposes_avl_metrics_and_event_mutation_controls() -> None:
+    client = TestClient(app)
+    app_module.REPORT_QUEUE = app_module.ReportQueue()
+    app_module.REPORT_PROCESSOR = app_module.ReportProcessor()
+    app_module.SCENARIO.set_mode("W")
+
+    payload = {
+        "event_id": 510,
+        "magnitude": 4.5,
+        "depth_km": 20.0,
+        "x_km": 10.0,
+        "y_km": 20.0,
+        "station": "ST-51",
+        "revision": 1,
+    }
+    assert client.post("/api/reports", json=payload).status_code == 200
+    assert client.post("/api/queue/process").status_code == 200
+
+    state = client.get("/api/state").json()
+    assert state["metrics"]["avl"]["size"] == 1
+    assert state["avl"]["key"]["event_id"] == 510
+
+    corrected = client.post("/api/events/510/correct", json={"magnitude": 6.0})
+    assert corrected.status_code == 200
+    assert corrected.json()["event"]["magnitude"] == 6.0
+
+    deleted = client.post("/api/events/510/delete")
+    assert deleted.status_code == 200
+    assert deleted.json()["state"]["metrics"]["avl"]["size"] == 0
+
+
+def test_api_stress_mode_and_global_recovery_controls() -> None:
+    client = TestClient(app)
+    app_module.REPORT_QUEUE = app_module.ReportQueue()
+    app_module.REPORT_PROCESSOR = app_module.ReportProcessor()
+
+    assert client.post("/api/scenario/mode", json={"mode": "T"}).status_code == 200
+    for event_id in range(601, 606):
+        payload = {
+            "event_id": event_id,
+            "magnitude": 4.0,
+            "depth_km": 20.0,
+            "x_km": 10.0,
+            "y_km": 20.0,
+            "station": f"ST-{event_id}",
+            "revision": 1,
+        }
+        client.post("/api/reports", json=payload)
+        client.post("/api/queue/process")
+
+    stressed = client.get("/api/state").json()
+    assert stressed["mode"] == "stress"
+    assert stressed["metrics"]["avl"]["stress_mode"] is True
+
+    recovered = client.post("/api/scenario/recover")
+    assert recovered.status_code == 200
+    assert recovered.json()["metrics"]["balanced"] is True
+    assert recovered.json()["mode"] == "normal"
 
 
 def test_report_queue_api_accepts_new_reports() -> None:
@@ -364,3 +464,28 @@ def test_association_api_returns_reference_links() -> None:
     assert response.status_code == 200
     assert response.json()["count"] >= 1
     assert any(item["reference_id"] == 401 for item in response.json()["associations"])
+def test_history_archives_restores_and_preserves_deleted_reports() -> None:
+    report = make_report(40, 1, 4.0, "A")
+    history = Historial()
+
+    history.archive(report)
+    assert history.archived_count == 1
+    assert history.find_archived("SIS-000040") == report
+    assert history.restore("SIS-000040") == report
+    assert history.archived_count == 0
+
+    history.delete(report)
+    assert history.deleted_count == 1
+    assert history.find_deleted(40) == report
+    assert history.restore(40) == report
+
+
+def test_history_rejects_missing_report_and_duplicate_archive_is_idempotent() -> None:
+    report = make_report(41, 1, 4.0, "A")
+    history = Historial()
+    history.archive(report)
+    history.archive(report)
+
+    assert history.archived == [report]
+    with pytest.raises(LookupError, match="not archived or deleted"):
+        history.restore(999)

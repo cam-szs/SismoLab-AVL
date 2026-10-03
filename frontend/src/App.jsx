@@ -13,24 +13,48 @@ const emptyForm = {
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Error del backend");
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.detail || payload?.error || "Error del backend");
   }
   return response.json();
+}
+
+function TreeNode({ node }) {
+  if (!node) return null;
+  return (
+    <li>
+      <div className="tree-node">
+        <strong>#{node.key.event_id}</strong>
+        <span>P{node.key.priority} · M {(node.key.magnitude_tenths / 10).toFixed(1)}</span>
+        <small>h {node.height} · b {node.factor_balanceo}</small>
+      </div>
+      {(node.izquierdo || node.derecho) && (
+        <ul>
+          <TreeNode node={node.izquierdo} />
+          <TreeNode node={node.derecho} />
+        </ul>
+      )}
+    </li>
+  );
 }
 
 export default function App() {
   const [state, setState] = useState(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [action, setAction] = useState("");
   const [form, setForm] = useState(emptyForm);
 
   const refreshState = async () => {
+    setLoading(true);
     try {
       const nextState = await fetchJson(`${API_URL}/api/state`);
       setState(nextState);
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo consultar el backend");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,20 +65,42 @@ export default function App() {
   }, []);
 
   const updateMode = async (mode) => {
+    setAction(`mode-${mode}`);
     try {
       const nextState = await fetchJson(`${API_URL}/api/scenario/mode`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode }),
       });
-      setState((previous) => ({ ...previous, mode: nextState.mode, clock: nextState.clock, scenario: nextState }));
+      setState(nextState);
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo cambiar el modo");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const updateParameters = async (name, value) => {
+    setAction(`parameter-${name}`);
+    try {
+      const parameters = { ...(state?.parameters ?? {}), [name]: Number(value) };
+      const nextState = await fetchJson(`${API_URL}/api/scenario/parameters`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parameters),
+      });
+      setState(nextState);
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudieron actualizar los parámetros");
+    } finally {
+      setAction("");
     }
   };
 
   const advanceClock = async (amount = 1) => {
+    setAction("clock");
     try {
       const nextState = await fetchJson(`${API_URL}/api/scenario/clock`, {
         method: "POST",
@@ -65,6 +111,8 @@ export default function App() {
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo avanzar el reloj");
+    } finally {
+      setAction("");
     }
   };
 
@@ -75,6 +123,7 @@ export default function App() {
 
   const submitReport = async (event) => {
     event.preventDefault();
+    setAction("submit");
     try {
       await fetchJson(`${API_URL}/api/reports`, {
         method: "POST",
@@ -94,10 +143,13 @@ export default function App() {
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo enviar el reporte");
+    } finally {
+      setAction("");
     }
   };
 
   const processNextReport = async () => {
+    setAction("process");
     try {
       const nextState = await fetchJson(`${API_URL}/api/queue/process`, {
         method: "POST",
@@ -112,10 +164,13 @@ export default function App() {
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo procesar la cola");
+    } finally {
+      setAction("");
     }
   };
 
   const archiveEvent = async (eventId) => {
+    setAction(`archive-${eventId}`);
     try {
       await fetchJson(`${API_URL}/api/archive`, {
         method: "POST",
@@ -126,10 +181,13 @@ export default function App() {
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo archivar el evento");
+    } finally {
+      setAction("");
     }
   };
 
   const recoverEvent = async (eventId) => {
+    setAction(`recover-${eventId}`);
     try {
       await fetchJson(`${API_URL}/api/recover`, {
         method: "POST",
@@ -140,6 +198,93 @@ export default function App() {
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo recuperar el evento");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const recoverBalance = async () => {
+    setAction("recover-balance");
+    try {
+      const payload = await fetchJson(`${API_URL}/api/scenario/recover`, { method: "POST" });
+      setState(payload.state);
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo recuperar el AVL");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const undoLastAction = async () => {
+    setAction("undo");
+    try {
+      const payload = await fetchJson(`${API_URL}/api/undo`, { method: "POST" });
+      setState(payload.state);
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No hay acciones para deshacer");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const archiveBranch = async () => {
+    setAction("archive-branch");
+    try {
+      const payload = await fetchJson(`${API_URL}/api/archive/branch`, { method: "POST" });
+      setState(payload.state);
+      setError(payload.reason === "no eligible branch" ? "No hay ramas elegibles para archivar" : "");
+    } catch (reason) {
+      setError(reason.message || "No se pudo archivar la rama");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const reviewEvent = async (eventId) => {
+    setAction(`review-${eventId}`);
+    try {
+      const payload = await fetchJson(`${API_URL}/api/events/${eventId}/review`, { method: "POST" });
+      setState(payload.state);
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo marcar el evento");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const correctEvent = async (eventId) => {
+    const magnitude = window.prompt("Nueva magnitud (ejemplo: 5.4):");
+    if (magnitude === null || magnitude.trim() === "") return;
+    setAction(`correct-${eventId}`);
+    try {
+      const payload = await fetchJson(`${API_URL}/api/events/${eventId}/correct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ magnitude: Number(magnitude) }),
+      });
+      setState(payload.state);
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo corregir el evento");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const deleteEvent = async (eventId) => {
+    if (!window.confirm(`¿Eliminar el evento #${eventId}?`)) return;
+    setAction(`delete-${eventId}`);
+    try {
+      const payload = await fetchJson(`${API_URL}/api/events/${eventId}/delete`, { method: "POST" });
+      setState(payload.state);
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo eliminar el evento");
+    } finally {
+      setAction("");
     }
   };
 
@@ -171,10 +316,46 @@ export default function App() {
     }
   };
 
+  const downloadState = () => {
+    const payload = JSON.stringify(state ?? {}, null, 2);
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sismolab-scenario.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const loadJsonFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setAction("load-file");
+    try {
+      const text = await file.text();
+      const document = JSON.parse(text);
+      const payload = await fetchJson(`${API_URL}/api/load-json`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document, mode: "topology" }),
+      });
+      setState(payload.state);
+      setError("");
+    } catch (reason) {
+      setError(reason instanceof SyntaxError
+        ? "El archivo no contiene JSON válido"
+        : reason.message || "No se pudo cargar el archivo JSON");
+    } finally {
+      setAction("");
+    }
+  };
+
   const queueItems = state?.queue ?? [];
   const activeEvents = state?.events ?? [];
   const archivedEvents = state?.history?.archived ?? [];
   const associations = state?.associations ?? [];
+  const avlMetrics = state?.metrics?.avl ?? {};
   const mapPoints = activeEvents.map((event) => ({
     id: event.id,
     left: Math.min(90, Math.max(8, (event.epicenter?.x ?? 0) / 10)),
@@ -189,11 +370,11 @@ export default function App() {
           <h1>SismoLab <span>AVL</span></h1>
         </div>
         <div className={`connection ${error ? "offline" : "online"}`}>
-          <i /> {error ? "Backend desconectado" : "Backend conectado"}
+          <i /> {loading ? "Sincronizando..." : error ? "Backend desconectado" : "Backend conectado"}
         </div>
       </header>
 
-      {error && <p className="error">{error}. Ejecuta la API en el puerto 8000.</p>}
+      {error && <p className="error" role="alert">{error}. Ejecuta la API en el puerto 8000.</p>}
 
       <section className="hero-panel">
         <div>
@@ -216,6 +397,9 @@ export default function App() {
           ["Eventos activos", state?.metrics?.active ?? "--"],
           ["En cola", state?.queue?.length ?? "--"],
           ["Pendientes", state?.metrics?.pending ?? "--"],
+          ["Altura AVL", avlMetrics.height ?? "--"],
+          ["Rotaciones", avlMetrics.rotations ?? "--"],
+          ["Balance", avlMetrics.balanced === false ? "Requiere recuperación" : "OK"],
         ].map(([label, value]) => (
           <article className="metric" key={label}>
             <strong>{value}</strong>
@@ -231,15 +415,39 @@ export default function App() {
             <b>MODOS</b>
           </div>
           <div className="mode-switcher">
-            {['W', 'R', 'L', 'T'].map((mode) => (
+            {[
+              ["normal", "Normal"],
+              ["stress", "Estrés"],
+            ].map(([mode, label]) => (
               <button
                 key={mode}
                 type="button"
                 className={state?.mode === mode ? "active" : ""}
                 onClick={() => updateMode(mode)}
+                disabled={Boolean(action)}
               >
-                {mode}
+                {label}
               </button>
+            ))}
+          </div>
+          <div className="parameter-grid">
+            {[
+              ["W", "Ventana (h)"],
+              ["R", "Distancia (km)"],
+              ["L", "Límite de profundidad"],
+              ["T", "Antigüedad (h)"],
+            ].map(([name, label]) => (
+              <label key={name}>
+                {name} · {label}
+                <input
+                  type="number"
+                  min={name === "L" ? 0 : 0.1}
+                  step={name === "L" ? 1 : 0.1}
+                  value={state?.parameters?.[name] ?? ""}
+                  onChange={(event) => updateParameters(name, event.target.value)}
+                  disabled={Boolean(action)}
+                />
+              </label>
             ))}
           </div>
         </div>
@@ -258,8 +466,22 @@ export default function App() {
       </section>
 
       <section className="state-actions" aria-label="Persistencia del escenario">
-        <button type="button" className="action-button" onClick={saveState}>Guardar estado</button>
+        <button type="button" className="action-button" onClick={recoverBalance} disabled={Boolean(action)}>
+          {action === "recover-balance" ? "Recuperando..." : "Recuperar AVL"}
+        </button>
+        <button type="button" className="action-button" onClick={saveState}>Guardar en backend</button>
+        <button type="button" className="action-button secondary" onClick={downloadState}>Descargar JSON</button>
         <button type="button" className="action-button secondary" onClick={loadSavedState}>Cargar guardado</button>
+        <label className="action-button secondary file-action">
+          {action === "load-file" ? "Cargando..." : "Cargar archivo JSON"}
+          <input type="file" accept="application/json,.json" onChange={loadJsonFile} disabled={Boolean(action)} />
+        </label>
+        <button type="button" className="action-button secondary" onClick={undoLastAction} disabled={Boolean(action)}>
+          {action === "undo" ? "Deshaciendo..." : "Deshacer"}
+        </button>
+        <button type="button" className="action-button secondary" onClick={archiveBranch} disabled={Boolean(action)}>
+          {action === "archive-branch" ? "Archivando..." : "Archivar rama elegible"}
+        </button>
       </section>
 
       <section className="workspace-grid">
@@ -267,6 +489,13 @@ export default function App() {
           <div className="card-heading">
             <span>01 / ESTRUCTURA</span>
             <b>AVL</b>
+          </div>
+          <div className="avl-summary">
+            <span>{avlMetrics.balanced === false ? "AVL en modo estrés" : "AVL balanceado"}</span>
+            <small>{avlMetrics.size ?? 0} nodos · {avlMetrics.leaves ?? 0} hojas</small>
+          </div>
+          <div className="avl-tree" aria-label="Estructura del árbol AVL">
+            {state?.avl ? <ul><TreeNode node={state.avl} /></ul> : <div className="empty-state compact">Sin estructura AVL</div>}
           </div>
           <div className="event-list" aria-live="polite">
             {activeEvents.length === 0 ? (
@@ -279,9 +508,20 @@ export default function App() {
                       <strong>#{event.id}</strong>
                       <span>M {event.magnitude.toFixed(1)} · {event.depth_km.toFixed(1)} km</span>
                     </div>
-                    <button type="button" className="archive-button" onClick={() => archiveEvent(event.id)}>
-                      Archivar
-                    </button>
+                    <div className="event-actions">
+                      <button type="button" className="archive-button" onClick={() => archiveEvent(event.id)} disabled={Boolean(action)}>
+                        {action === `archive-${event.id}` ? "..." : "Archivar"}
+                      </button>
+                      <button type="button" className="edit-button" onClick={() => correctEvent(event.id)} disabled={Boolean(action)}>
+                        Corregir
+                      </button>
+                      <button type="button" className="review-button" onClick={() => reviewEvent(event.id)} disabled={Boolean(action)}>
+                        Revisar
+                      </button>
+                      <button type="button" className="delete-button" onClick={() => deleteEvent(event.id)} disabled={Boolean(action)}>
+                        Eliminar
+                      </button>
+                    </div>
                   </div>
                   <small>rev {event.revision} · {event.status}</small>
                 </div>
@@ -353,12 +593,15 @@ export default function App() {
                 <input name="station" value={form.station} onChange={handleInputChange} type="text" required />
               </label>
             </div>
-            <button className="submit-report" type="submit">Enviar reporte</button>
+            <button className="submit-report" type="submit">Encolar reporte</button>
           </form>
 
           <button className="process-report" type="button" onClick={processNextReport}>
-            Procesar siguiente
+            Crear nodo desde siguiente reporte
           </button>
+          <p className="form-help">
+            La recepción primero encola el reporte. El nodo se crea al procesar el siguiente elemento de la cola FIFO.
+          </p>
 
           <div className="queue-list" aria-live="polite">
             {queueItems.length === 0 ? (

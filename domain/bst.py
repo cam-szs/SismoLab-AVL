@@ -69,6 +69,13 @@ class BSTree:
         """Return (node or None, number of nodes visited)."""
         return self._search(self.root, key, 0)
 
+    def update_value(self, key: EventKey, value: Any) -> None:
+        """Replace the value stored at an existing key without changing structure."""
+        node, _ = self.search(key)
+        if node is None:
+            raise KeyError(f"Key {key} not found.")
+        node.event = value
+
     def _search(self, node: Optional[Node], key: EventKey,
                 visited: int) -> Tuple[Optional[Node], int]:
         if node is None:

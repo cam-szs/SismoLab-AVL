@@ -3,27 +3,37 @@
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from copy import deepcopy
+import re
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from domain.event import Event
+from domain.event_key import EventKey
 from domain.queue_fifo import ReportQueue
 from domain.report import Report
 from domain.scenario import Scenario
-from services.archive_service import ArchiveService
 from services.association_service import AssociationService
 from services.persistence_service import PersistenceService
 from services.report_processor import ReportProcessor
+from domain.undo_stack import Snapshot, UndoStack
+from domain.node import Node
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_STATE_PATH = PROJECT_ROOT / "data" / "scenario_state.json"
 SCENARIO = Scenario()
 REPORT_QUEUE: ReportQueue[Report] = ReportQueue()
-REPORT_PROCESSOR = ReportProcessor()
-ARCHIVE_SERVICE = ArchiveService()
+REPORT_PROCESSOR = ReportProcessor(
+    populated_zone=lambda report: SCENARIO.is_populated(report.x_km, report.y_km)
+)
 ASSOCIATION_SERVICE = AssociationService()
+UNDO_STACK: UndoStack[Snapshot] = UndoStack()
+VERSIONS: dict[str, dict[str, Any]] = {}
+VERSION_DIR = PROJECT_ROOT / "data" / "versions"
 
 
 app = FastAPI(title="SismoLab AVL API", version="0.1.0")
@@ -39,6 +49,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, error: ValueError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"error": str(error)})
+
+
+@app.exception_handler(KeyError)
+async def key_error_handler(request: Request, error: KeyError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": str(error)})
 
 
 def _serialize_queue() -> list[dict[str, Any]]:
@@ -75,11 +95,16 @@ def _serialize_history() -> dict[str, Any]:
 
 def _metrics_payload() -> dict[str, Any]:
     queue_count = len(REPORT_QUEUE)
+    tree_metrics = REPORT_PROCESSOR.tree_metrics()
     return {
         "active": len(REPORT_PROCESSOR.active_events),
         "archived": len(REPORT_PROCESSOR.archived_events),
         "pending": queue_count,
-        "expensive_access": len(REPORT_PROCESSOR.deleted_ids),
+        "expensive_access": len(
+            REPORT_PROCESSOR.query_expensive_access(SCENARIO.access_depth_limit)
+        ),
+        "avl": tree_metrics,
+        "processing": REPORT_PROCESSOR.stats.copy(),
     }
 
 
@@ -120,6 +145,7 @@ def _snapshot_state() -> dict[str, Any]:
         "message": "Backend connected and ready for scenario state.",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "mode": SCENARIO.mode,
+        "parameters": SCENARIO.parameters,
         "clock": SCENARIO.clock,
         "events": events_payload,
         "queue": queue_items,
@@ -128,15 +154,20 @@ def _snapshot_state() -> dict[str, Any]:
             **_metrics_payload(),
             "pending": len(queue_items),
         },
+        "avl": REPORT_PROCESSOR.tree.export_to_dict(),
         "scenario": _scenario_payload(),
         "associations": _association_payload()["associations"],
         "association_count": _association_payload()["count"],
     }
 
 
-def _hydrate_from_snapshot(payload: dict[str, Any]) -> None:
+def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topology") -> None:
     if not isinstance(payload, dict):
         raise ValueError("state must be a JSON object")
+    if load_mode not in {"topology", "insertions"}:
+        raise ValueError("load mode must be 'topology' or 'insertions'")
+    if load_mode == "topology":
+        PersistenceService.validate_topology(payload.get("avl"))
 
     global REPORT_QUEUE, REPORT_PROCESSOR
 
@@ -145,6 +176,14 @@ def _hydrate_from_snapshot(payload: dict[str, Any]) -> None:
     if isinstance(payload.get("clock"), int):
         SCENARIO.clock = payload["clock"]
         SCENARIO.values["clock"] = payload["clock"]
+    parameters = payload.get("parameters", payload.get("scenario", {}).get("parameters", {}))
+    if isinstance(parameters, dict):
+        SCENARIO.set_parameters(
+            W=parameters.get("W"),
+            R=parameters.get("R"),
+            L=parameters.get("L"),
+            T=parameters.get("T"),
+        )
 
     REPORT_QUEUE = ReportQueue()
     for item in payload.get("queue", []):
@@ -153,11 +192,15 @@ def _hydrate_from_snapshot(payload: dict[str, Any]) -> None:
     active_events: dict[int, Event] = {}
     for item in payload.get("events", []):
         event = _event_from_dict(item)
+        if event.event_id in active_events:
+            raise ValueError(f"duplicate active event {event.event_id}")
         active_events[event.event_id] = event
 
     archived_events: dict[int, Event] = {}
     for item in payload.get("history", {}).get("archived", []):
         event = _event_from_dict(item)
+        if event.event_id in active_events or event.event_id in archived_events:
+            raise ValueError(f"duplicate historical event {event.event_id}")
         archived_events[event.event_id] = event
 
     deleted_ids: set[int] = set()
@@ -166,19 +209,67 @@ def _hydrate_from_snapshot(payload: dict[str, Any]) -> None:
             deleted_ids.add(int(item.get("event_id", item.get("id", 0))))
         else:
             deleted_ids.add(int(item))
+    overlap = deleted_ids & (set(active_events) | set(archived_events))
+    if overlap:
+        raise ValueError(f"identities cannot be active and deleted: {sorted(overlap)}")
 
     REPORT_PROCESSOR = ReportProcessor(
         active_events=active_events,
         archived_events=archived_events,
         deleted_ids=deleted_ids,
+        populated_zone=lambda report: SCENARIO.is_populated(report.x_km, report.y_km),
+        stress_mode=SCENARIO.stress_mode,
     )
+    topology = payload.get("avl") if load_mode == "topology" else None
+    if topology is not None:
+        def build(node_payload: dict[str, Any] | None) -> Node | None:
+            if node_payload is None:
+                return None
+            key_payload = node_payload["key"]
+            event_id = int(key_payload["event_id"])
+            event = active_events[event_id]
+            stored_key = (
+                int(key_payload["priority"]),
+                int(key_payload["magnitude_tenths"]),
+                event_id,
+            )
+            if stored_key != (
+                event.key.priority,
+                event.key.magnitude_tenths,
+                event.key.event_id,
+            ):
+                raise ValueError(f"stored key does not match event {event_id}")
+            node = Node(event.key, event)
+            node.left = build(node_payload.get("izquierdo"))
+            node.right = build(node_payload.get("derecho"))
+            node.update_height()
+            if node.height != int(node_payload.get("height", node.height)):
+                raise ValueError(f"invalid stored height for event {event_id}")
+            return node
+
+        REPORT_PROCESSOR.tree.root = build(topology)
+        REPORT_PROCESSOR.tree.size = len(active_events)
+    audit = REPORT_PROCESSOR.audit_report()
+    if not SCENARIO.stress_mode and not audit["balanced"]:
+        raise ValueError("normal snapshot must contain a balanced AVL")
 
 
 def _association_payload() -> dict[str, Any]:
-    events = sorted(REPORT_PROCESSOR.active_events.values(), key=lambda event: event.event_id)
+    events = sorted(
+        [
+            *REPORT_PROCESSOR.active_events.values(),
+            *REPORT_PROCESSOR.archived_events.values(),
+        ],
+        key=lambda event: event.event_id,
+    )
     links: list[dict[str, Any]] = []
     for source in events:
-        for association in ASSOCIATION_SERVICE.associate(source, events):
+        for association in ASSOCIATION_SERVICE.associate(
+            source,
+            events,
+            max_hours=SCENARIO.association_window_hours,
+            max_distance_km=SCENARIO.association_distance_km,
+        ):
             links.append(
                 {
                     "source_id": association.source_id,
@@ -199,8 +290,14 @@ def _scenario_payload() -> dict[str, Any]:
     return {
         "mode": SCENARIO.mode,
         "clock": SCENARIO.clock,
+        "parameters": SCENARIO.parameters,
         "values": SCENARIO.values.copy(),
     }
+
+
+def _record_undo(label: str) -> None:
+    """Capture a complete immutable state before a user action."""
+    UNDO_STACK.push(Snapshot(label=label, state=deepcopy(_snapshot_state())))
 
 
 @app.get("/api/health")
@@ -240,14 +337,41 @@ def set_scenario_mode(payload: dict[str, Any]) -> dict[str, Any]:
     mode = payload.get("mode")
     if mode is None:
         raise ValueError("mode is required")
+    _record_undo("change execution mode")
     SCENARIO.set_mode(str(mode))
-    return _scenario_payload()
+    REPORT_PROCESSOR.set_stress_mode(SCENARIO.stress_mode)
+    return _snapshot_state()
+
+
+@app.post("/api/scenario/parameters")
+def set_scenario_parameters(payload: dict[str, Any]) -> dict[str, Any]:
+    """Update W/R/L/T and return the recalculated live state."""
+    _record_undo("change scenario parameters")
+    SCENARIO.set_parameters(
+        W=payload.get("W"),
+        R=payload.get("R"),
+        L=payload.get("L"),
+        T=payload.get("T"),
+    )
+    return _snapshot_state()
+
+
+@app.post("/api/scenario/recover")
+def recover_scenario_balance() -> dict[str, Any]:
+    """Recover the global AVL balance after a stress burst."""
+    _record_undo("recover AVL balance")
+    metrics = REPORT_PROCESSOR.recover_balance()
+    if SCENARIO.stress_mode:
+        SCENARIO.set_mode("normal")
+    REPORT_PROCESSOR.set_stress_mode(False, recover=False)
+    return {"recovered": True, "mode": SCENARIO.mode, "metrics": metrics, "state": _snapshot_state()}
 
 
 @app.post("/api/scenario/clock")
 def advance_scenario_clock(payload: dict[str, Any]) -> dict[str, Any]:
     """Advance the simulation clock by a non-negative integer amount."""
     amount = payload.get("amount", 1)
+    _record_undo("advance simulation clock")
     SCENARIO.advance_clock(int(amount))
     return _scenario_payload()
 
@@ -271,6 +395,7 @@ def process_queue() -> dict[str, Any]:
             "metrics": _metrics_payload(),
         }
 
+    _record_undo("process one queued report")
     result = REPORT_PROCESSOR.process_next(REPORT_QUEUE)
     serialized = {
         "decision": result.decision,
@@ -312,6 +437,7 @@ def enqueue_report(payload: dict[str, Any]) -> dict[str, Any]:
         station=str(payload["station"]),
         revision=int(payload.get("revision", 1)),
     )
+    _record_undo("enqueue report")
     REPORT_QUEUE.enqueue(report)
     report_payload = report.to_dict()
     report_payload["event_id"] = report_payload["id"]
@@ -324,8 +450,8 @@ def archive_event(payload: dict[str, Any]) -> dict[str, Any]:
     event_id = int(payload.get("event_id"))
     if event_id not in REPORT_PROCESSOR.active_events:
         raise KeyError(f"event {event_id} is not active")
+    _record_undo("archive event")
     event = REPORT_PROCESSOR.archive(event_id)
-    ARCHIVE_SERVICE.archive(event)
     return {
         "archived": True,
         "event_id": event_id,
@@ -334,20 +460,163 @@ def archive_event(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@app.post("/api/archive/branch")
+def archive_branch() -> dict[str, Any]:
+    """Archive the largest eligible low-priority old subtree."""
+    _record_undo("archive eligible branch")
+    result = REPORT_PROCESSOR.archive_branch(
+        clock=datetime.now(timezone.utc),
+        age_hours=SCENARIO.archive_age_hours,
+    )
+    return {
+        "archived": bool(result["archived"]),
+        "root_id": result["root_id"],
+        "event_ids": [event.event_id for event in result["archived"]],
+        "reason": result["reason"],
+        "state": _snapshot_state(),
+    }
+
+
+@app.post("/api/events/{event_id}/correct")
+def correct_event(event_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """Apply a correction to an active event and return the new snapshot."""
+    changes: dict[str, object] = {}
+    field_map = {
+        "magnitude": "magnitude_tenths",
+        "depth_km": "depth_tenths",
+        "x_km": "x_tenths",
+        "y_km": "y_tenths",
+    }
+    for source, target in field_map.items():
+        if source in payload:
+            value = float(payload[source])
+            changes[target] = EventKey.to_tenths(value)
+    if "populated_zone" in payload:
+        changes["populated_zone"] = bool(payload["populated_zone"])
+
+    try:
+        _record_undo("correct event")
+        event = REPORT_PROCESSOR.correct(event_id, changes)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"corrected": True, "event": event.to_dict(), "state": _snapshot_state()}
+
+
+@app.post("/api/events/{event_id}/delete")
+def delete_event(event_id: int) -> dict[str, Any]:
+    """Delete an active event and expose the updated live state."""
+    try:
+        _record_undo("delete event")
+        event = REPORT_PROCESSOR.delete(event_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return {"deleted": True, "event_id": event.event_id, "state": _snapshot_state()}
+
+
+@app.post("/api/events/{event_id}/review")
+def review_event(event_id: int) -> dict[str, Any]:
+    _record_undo("mark event reviewed")
+    try:
+        event = REPORT_PROCESSOR.mark_reviewed(event_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return {"reviewed": True, "event": event.to_dict(), "state": _snapshot_state()}
+
+
+@app.get("/api/audit")
+def audit_state() -> dict[str, object]:
+    return REPORT_PROCESSOR.audit_report()
+
+
 @app.post("/api/recover")
 def recover_event(payload: dict[str, Any]) -> dict[str, Any]:
     """Recover an archived event back into the active catalog."""
     event_id = int(payload.get("event_id"))
     if event_id not in REPORT_PROCESSOR.archived_events:
         raise KeyError(f"event {event_id} is not archived")
+    _record_undo("recover archived event")
     event = REPORT_PROCESSOR.recover(event_id)
-    ARCHIVE_SERVICE.recover(event_id)
     return {
         "recovered": True,
         "event_id": event_id,
         "event": event.to_dict(),
         "history": _serialize_history(),
     }
+
+
+@app.post("/api/undo")
+def undo() -> dict[str, Any]:
+    """Restore the complete state captured before the latest action."""
+    if len(UNDO_STACK) == 0:
+        raise HTTPException(status_code=409, detail="no actions to undo")
+    snapshot = UNDO_STACK.pop()
+    _hydrate_from_snapshot(snapshot.state)
+    return {"undone": True, "label": snapshot.label, "state": _snapshot_state()}
+
+
+@app.post("/api/versions/{name}")
+def save_version(name: str) -> dict[str, Any]:
+    """Save a named operational version in memory and on disk when requested."""
+    normalized = name.strip()
+    if not normalized or not re.fullmatch(r"[A-Za-z0-9_-]+", normalized):
+        raise HTTPException(status_code=400, detail="version name is required")
+    state = deepcopy(_snapshot_state())
+    VERSIONS[normalized] = state
+    VERSION_DIR.mkdir(parents=True, exist_ok=True)
+    PersistenceService().export(VERSION_DIR / f"{normalized}.json", state)
+    return {"saved": True, "name": normalized}
+
+
+@app.get("/api/versions")
+def list_versions() -> dict[str, Any]:
+    VERSION_DIR.mkdir(parents=True, exist_ok=True)
+    disk_versions = {
+        path.stem for path in VERSION_DIR.glob("*.json") if path.is_file()
+    }
+    return {"versions": sorted(set(VERSIONS) | disk_versions)}
+
+
+@app.post("/api/versions/{name}/restore")
+def restore_version(name: str) -> dict[str, Any]:
+    """Restore a named version as one undoable action."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        raise HTTPException(status_code=400, detail="invalid version name")
+    if name not in VERSIONS:
+        version_path = VERSION_DIR / f"{name}.json"
+        if not version_path.exists():
+            raise HTTPException(status_code=404, detail="version not found")
+        VERSIONS[name] = PersistenceService().load(version_path)
+    _record_undo("restore version")
+    _hydrate_from_snapshot(deepcopy(VERSIONS[name]))
+    return {"restored": True, "name": name, "state": _snapshot_state()}
+
+
+@app.get("/api/queries/expensive")
+def expensive_events() -> dict[str, Any]:
+    entries = REPORT_PROCESSOR.query_expensive_access(SCENARIO.access_depth_limit)
+    return {
+        "limit": SCENARIO.access_depth_limit,
+        "events": [
+            {
+                **entry["event"].to_dict(),
+                "node_depth": entry["depth"],
+                "nodes_visited": entry["visited"],
+            }
+            for entry in entries
+        ],
+    }
+
+
+@app.get("/api/queries/top-pending")
+def top_pending(limit: int = 5) -> dict[str, Any]:
+    if limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be positive")
+    events = [
+        node.event
+        for node in REPORT_PROCESSOR.tree.reverse_inorder()
+        if node.event.status.value == "pending"
+    ][:limit]
+    return {"limit": limit, "events": [event.to_dict() for event in events]}
 
 
 @app.post("/api/persist")
@@ -368,6 +637,7 @@ def persist(payload: dict[str, Any]) -> dict[str, Any]:
         "pending": len(_serialize_queue()),
     }
     state["scenario"] = _scenario_payload()
+    state["avl"] = REPORT_PROCESSOR.tree.export_to_dict()
     state["associations"] = _association_payload()["associations"]
     state["association_count"] = _association_payload()["count"]
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -377,13 +647,25 @@ def persist(payload: dict[str, Any]) -> dict[str, Any]:
     return {"saved": True, "path": str(path), "state": state}
 
 
+@app.post("/api/load-json")
+def load_json_document(payload: dict[str, Any]) -> dict[str, Any]:
+    """Load a JSON document supplied directly by the browser."""
+    document = payload.get("document")
+    if not isinstance(document, dict):
+        raise ValueError("document must be a JSON object")
+    _record_undo("load JSON document")
+    _hydrate_from_snapshot(document, load_mode=str(payload.get("mode", "topology")))
+    return {"loaded": True, "state": _snapshot_state()}
+
+
 @app.post("/api/load")
 def load_state(payload: dict[str, Any]) -> dict[str, Any]:
     """Load a previously persisted scenario state from disk."""
     path = payload.get("path", str(DEFAULT_STATE_PATH))
     persistence = PersistenceService()
     state = persistence.load(path)
-    _hydrate_from_snapshot(state)
+    _record_undo("load saved JSON")
+    _hydrate_from_snapshot(state, load_mode=str(payload.get("mode", "topology")))
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     state["mode"] = SCENARIO.mode
     state["clock"] = SCENARIO.clock

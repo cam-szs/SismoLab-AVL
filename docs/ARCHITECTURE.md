@@ -4,13 +4,20 @@
 
 The project will use a Python backend and a React frontend.
 
-- `domain/` owns the AVL, BST, entities, queue, undo stack, and invariants.
-- `services/` coordinates event lifecycle, reports, associations, archive, metrics, and persistence.
+- `domain/` owns the AVL, BST, entities, queue, undo stack, scenario
+  parameters, and invariants.
+- `services/` coordinates event lifecycle, reports, associations, archive,
+  metrics, and persistence.
 - `api/` is a thin HTTP adapter. It validates requests, calls services, and returns JSON. It must not contain AVL or business rules.
 - `frontend/` contains React components and presentation state. It must not duplicate domain rules.
 - `tests/` verifies domain and service behavior. API tests only verify the adapter contract.
 
 React was selected because the team already wants to work with it. The cost is accepted and bounded by keeping one Python process for the backend and one simple Vite development process for the frontend. No WebSocket is planned; the UI refreshes after each user action.
+
+The scenario has two execution modes: `normal` and `stress`. `W`, `R`, `L`,
+and `T` are configurable assignment parameters, not modes. Stress recovery
+uses rotations on the existing nodes and never replaces the tree with an
+ordered-list reconstruction.
 
 ## Request flow
 
@@ -40,8 +47,8 @@ The assignments are a starting point, not isolated ownership. Each feature is me
 4. Implement event validation, priority, identity lookup, and lifecycle operations.
 5. Implement reports, revisions, conflicts, and FIFO processing.
 6. Implement associations, including a deterministic `refresh_all` policy for late reports.
-7. Implement archive, stress mode, global recovery, and metrics.
-8. Implement persistence, topology validation, undo, and versions.
+7. Implement archive, stress mode, rotational global recovery, and metrics.
+8. Implement persistence, topology validation, undo, and persistent versions.
 9. Connect API endpoints to completed services.
 10. Build React tree, event form, queue, and result panels.
 11. Add map, audit, history/version views, and mandatory scenario data.
@@ -53,3 +60,12 @@ The assignments are a starting point, not isolated ownership. Each feature is me
 - Errors return a stable object such as `{ "error": "..." }`.
 - The backend is the only source of truth for priority, key, associations, metrics, and structure.
 - The frontend may format values but may not recalculate business decisions.
+
+## Assignment parameters
+
+| Parameter | Meaning | Default |
+|---|---|---:|
+| `W` | Maximum association time window | 48 hours |
+| `R` | Maximum epicenter distance | 40 km |
+| `L` | Maximum depth before expensive-access marking | 3 |
+| `T` | Minimum age for an archival branch | 72 hours |

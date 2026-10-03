@@ -60,6 +60,65 @@ Examples of AI-assisted work recorded here:
 - **Human review required:** the student team confirmed that the test reflects the original domain requirement rather than a synthetic shortcut.
 - **Owner for understanding:** the student team, with AI assistance in reproducing and validating the failing scenario.
 
+## Current implementation alignment
+
+- **Date:** 2026-10-03
+- **Scope:** execution modes, AVL recovery, archival, undo, persistence, queries, and React controls.
+- **Files:** `domain/scenario.py`, `domain/avl.py`, `services/report_processor.py`, `services/association_service.py`, `services/persistence_service.py`, `api/app.py`, `frontend/src/App.jsx`, `frontend/src/styles.css`, `README.md`, `docs/ARCHITECTURE.md`.
+- **Request:** align the implementation with the project PDF, where normal/stress are the execution modes and W/R/L/T are parameters.
+- **Result:** separated execution mode from parameters, added rotational recovery, branch archival selection, complete-state undo snapshots, persistent named versions, topology validation/rehydration, academic query endpoints, and frontend controls.
+- **Human review required:** the team must verify the rotation proof, branch tie-breaks, snapshot semantics, and the mandatory demonstration cases before submission.
+- **Owner for understanding:** all three teammates.
+
 ## Final attribution statement
 
 This project was primarily developed by the student team. The AI assistant supported the process through architecture advice, debugging, and targeted corrections, but the main implementation, understanding, and responsibility for the final project outcomes remain with the students. The final version should therefore be defended and explained by the student team as their own work, with the AI contributions recorded as support rather than as the primary source of the project logic.
+- **Request:** clarify the real project rule for duplicate event IDs, remove the misleading default `event=None` insertion path, and clean up the breadth-first alias so the API naming does not hide a duplicate method.
+- **Result:** `DuplicateKeyError` is documented as an internal structural guard, not as the business-level validation for duplicate identifiers; `insert()` now requires a real event payload; and the tree exposes a single canonical breadth-first traversal name.
+- **Human review required:** confirm that id uniqueness checks belong in the service-layer index before any AVL/BST insert, and that the tree remains a structural primitive rather than the place where business validation happens.
+- **Owner for understanding:** all three teammates; the team must explain to the group that `id` uniqueness is enforced before calling `tree.insert()` even when the key changes due to priority or magnitude updates.
+
+## AVL implementation adaptation
+
+- **Date:** 2026-10-03
+- **Scope:** `domain/avl.py`.
+- **Request:** adapt the supplied AVL implementation to the project's `BSTree`, `Node`, and `EventKey` contracts.
+- **Result:** added AVL insertion/deletion rebalancing through subtree-returning rotations, rotation metrics, stress mode, traversal aliases, and tree export helpers.
+- **Human review required:** verify rotation invariants, deletion behavior, and the exported JSON shape before merging.
+- **Owner for understanding:** all three teammates.
+
+## Review-state synchronization and repository cleanup
+
+- **Date:** 2026-10-03
+- **Scope:** `domain/bst.py`, `services/event_service.py`, `tests/test_event_service_core.py`, `.gitignore`, `requirements.txt`.
+- **Request:** correct the inconsistency where marking an event as reviewed updated the service index but left the AVL node with the previous immutable event snapshot, and complete the first repository stabilization phase.
+- **Result:** added a structural value-update operation, synchronized the AVL value during `mark_reviewed`, added regression coverage, declared the API test client dependency, and stopped tracking generated Python cache files while ignoring the local virtual environment.
+- **Human review required:** verify the immutable-event replacement semantics, the cleanup diff, and the full test result before committing.
+- **Owner for understanding:** all three teammates.
+
+## Domain and service integration
+
+- **Date:** 2026-10-03
+- **Scope:** `domain/avl.py`, `domain/scenario.py`, `services/report_processor.py`, `services/persistence_service.py`, `api/app.py`, and regression tests.
+- **Request:** connect scenario stress mode to report processing, provide global AVL recovery, expose structural metrics, and validate JSON reconstruction.
+- **Result:** `ReportProcessor` now owns a synchronized AVL for active events, scenario mode `T` enables deferred balancing, recovery restores the global AVL invariant, API state exposes AVL and processing metrics, and persistence supports explicit merge loading.
+- **Human review required:** verify the stress-burst policy, recovery transition, serialized state compatibility, and AVL metrics before merging.
+- **Owner for understanding:** all three teammates.
+
+## API and frontend integration
+
+- **Date:** 2026-10-03
+- **Scope:** `api/app.py`, `services/report_processor.py`, `frontend/src/App.jsx`, `frontend/src/styles.css`, and `tests/test_skeleton.py`.
+- **Request:** complete the API/frontend phase with endpoint verification, stress and recovery controls, event correction/deletion, AVL visualization, structural metrics, loading states, and error feedback.
+- **Result:** added explicit event mutation endpoints, exposed the exported AVL structure and metrics, added React controls for stress/recovery/correction/deletion, and covered the new API flows with regression tests.
+- **Human review required:** verify the HTTP contract, destructive-action confirmation, UI state transitions, and the displayed AVL topology before merging.
+- **Owner for understanding:** all three teammates.
+
+## Stress mode implementation
+
+- **Date:** 2026-10-03
+- **Scope:** `domain/avl.py`, `tests/test_avl_tree.py`.
+- **Request:** implement deferred AVL balancing during report bursts and global recovery.
+- **Result:** added stress-mode toggles, height maintenance without rotations, balanced-tree recovery, invariant auditing, balance checks, rotation metrics, and stress deletion coverage.
+- **Human review required:** verify the burst policy, recovery timing, and metrics against the project scenario before merging.
+- **Owner for understanding:** all three teammates.
