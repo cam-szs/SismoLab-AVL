@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Generic, Optional, TypeVar
+from typing import Generic, Optional, TypeVar
 
 from .bst import BSTree, DuplicateKeyError
 from .node import Node
@@ -208,26 +208,3 @@ class AVLTree(BSTree, Generic[Key, Value]):
 
     def calculateHeight(self, node: Optional[Node]) -> int:
         return -1 if node is None else node.compute_height()
-
-    def export_to_dict(self) -> Optional[dict[str, Any]]:
-        """Export structure, height and balance factor for visualization."""
-        return self._export_node_to_dict(self.root)
-
-    def _export_node_to_dict(self, node: Optional[Node]) -> Optional[dict[str, Any]]:
-        if node is None:
-            return None
-        event = (
-            node.event.to_dict() if hasattr(node.event, "to_dict") else node.event
-        )
-        return {
-            "key": {
-                "priority": node.key.priority,
-                "magnitude_tenths": node.key.magnitude_tenths,
-                "event_id": node.key.event_id,
-            },
-            "event": event,
-            "height": node.height,
-            "factor_balanceo": node.balance_factor(),
-            "izquierdo": self._export_node_to_dict(node.left),
-            "derecho": self._export_node_to_dict(node.right),
-        }

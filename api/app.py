@@ -104,6 +104,7 @@ def _metrics_payload() -> dict[str, Any]:
             REPORT_PROCESSOR.query_expensive_access(SCENARIO.access_depth_limit)
         ),
         "avl": tree_metrics,
+        "bst": REPORT_PROCESSOR.bst_metrics(),
         "processing": REPORT_PROCESSOR.stats.copy(),
     }
 
@@ -155,6 +156,7 @@ def _snapshot_state() -> dict[str, Any]:
             "pending": len(queue_items),
         },
         "avl": REPORT_PROCESSOR.tree.export_to_dict(),
+        "bst": REPORT_PROCESSOR.bst_export(),
         "scenario": _scenario_payload(),
         "associations": _association_payload()["associations"],
         "association_count": _association_payload()["count"],
@@ -638,6 +640,7 @@ def persist(payload: dict[str, Any]) -> dict[str, Any]:
     }
     state["scenario"] = _scenario_payload()
     state["avl"] = REPORT_PROCESSOR.tree.export_to_dict()
+    state["bst"] = REPORT_PROCESSOR.bst_export()
     state["associations"] = _association_payload()["associations"]
     state["association_count"] = _association_payload()["count"]
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -678,6 +681,8 @@ def load_state(payload: dict[str, Any]) -> dict[str, Any]:
         "pending": len(_serialize_queue()),
     }
     state["scenario"] = _scenario_payload()
+    state["avl"] = REPORT_PROCESSOR.tree.export_to_dict()
+    state["bst"] = REPORT_PROCESSOR.bst_export()
     state["associations"] = _association_payload()["associations"]
     state["association_count"] = _association_payload()["count"]
     return {"loaded": True, "path": str(path), "state": state}

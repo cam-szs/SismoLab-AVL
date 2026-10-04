@@ -8,6 +8,7 @@ from collections import deque
 from datetime import datetime, timezone
 
 from domain.avl import AVLTree
+from domain.bst import BSTree
 from domain.event import Event
 from domain.event_key import EventKey
 from domain.queue_fifo import ReportQueue
@@ -41,8 +42,10 @@ class ReportProcessor:
         self.deleted_ids = deleted_ids if deleted_ids is not None else set()
         self._populated_zone = populated_zone or (lambda report: False)
         self.tree = AVLTree[EventKey, Event](stress_mode=stress_mode)
+        self.bst = BSTree()
         for event in self.active_events.values():
             self.tree.insert(event.key, event)
+            self.bst.insert(event.key, event)
         self.stats = {
             "created": 0,
             "corrections": 0,
@@ -95,6 +98,18 @@ class ReportProcessor:
             "depths": depths,
         }
 
+    def bst_metrics(self) -> dict[str, object]:
+        """Return structural metrics for the unrotated comparison BST."""
+        return {
+            "size": self.bst.size,
+            "height": self.bst.get_height(),
+            "leaves": self.bst.count_leaves(),
+        }
+
+    def bst_export(self) -> dict[str, object] | None:
+        """Export the comparison BST topology (same insertions, no rotations)."""
+        return self.bst.export_to_dict()
+
     def query_expensive_access(self, depth_limit: int) -> list[dict[str, object]]:
         """Return high-priority active events deeper than ``depth_limit``."""
         metrics = self.tree_metrics()
@@ -111,14 +126,18 @@ class ReportProcessor:
 
     def _insert_active(self, event: Event) -> None:
         self.tree.insert(event.key, event)
+        self.bst.insert(event.key, event)
         self.active_events[event.event_id] = event
 
     def _replace_active(self, previous: Event, updated: Event) -> None:
         if previous.key != updated.key:
             self.tree.remove(previous.key)
             self.tree.insert(updated.key, updated)
+            self.bst.delete(previous.key)
+            self.bst.insert(updated.key, updated)
         else:
             self.tree.update_value(updated.key, updated)
+            self.bst.update_value(updated.key, updated)
         self.active_events[updated.event_id] = updated
 
     def process_next(self, queue: ReportQueue[Report]) -> ProcessResult:
@@ -156,6 +175,7 @@ class ReportProcessor:
         """Move one active event to history without changing its identity."""
         event = self.active_events.pop(event_id)
         self.tree.remove(event.key)
+        self.bst.delete(event.key)
         self.archived_events[event_id] = event
         return event
 
@@ -196,6 +216,7 @@ class ReportProcessor:
         for event in events:
             self.active_events.pop(event.event_id, None)
             self.tree.remove(event.key)
+            self.bst.delete(event.key)
             self.archived_events[event.event_id] = event
         return {
             "archived": events,
@@ -215,6 +236,7 @@ class ReportProcessor:
         """Retire one active event so later reports cannot reactivate it."""
         event = self.active_events.pop(event_id)
         self.tree.remove(event.key)
+        self.bst.delete(event.key)
         self.deleted_ids.add(event_id)
         return event
 
@@ -243,6 +265,7 @@ class ReportProcessor:
             raise KeyError(f"event {event_id} is not active")
         updated = current.mark_reviewed()
         self.tree.update_value(current.key, updated)
+        self.bst.update_value(current.key, updated)
         self.active_events[event_id] = updated
         return updated
 

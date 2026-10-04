@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 import api.app as app_module
 from api.app import app
+from domain.event_key import EventKey
 from domain.report import Report
 from domain.historial import Historial
 from domain.queue_fifo import ReportQueue
@@ -489,3 +490,51 @@ def test_history_rejects_missing_report_and_duplicate_archive_is_idempotent() ->
     assert history.archived == [report]
     with pytest.raises(LookupError, match="not archived or deleted"):
         history.restore(999)
+
+
+def test_report_processor_keeps_parallel_bst_for_comparison() -> None:
+    """The comparison BST mirrors the AVL keys but never rotates."""
+    queue = ReportQueue[Report]()
+    processor = ReportProcessor()
+
+    for event_id in range(1, 8):
+        queue.enqueue(make_report(event_id, 1, 4.0, "A"))
+        assert processor.process_next(queue).decision == "created"
+
+    assert processor.bst.size == processor.tree.size == 7
+    assert [node.key.event_id for node in processor.bst.inorder()] == list(range(1, 8))
+    # Ascending inserts degrade the unrotated mirror while the AVL stays short.
+    assert processor.bst.get_height() > processor.tree.get_height()
+
+    processor.archive(4)
+    assert processor.bst.size == processor.tree.size == 6
+    assert processor.bst.search(EventKey(1, 40, 4))[0] is None
+
+
+def test_api_state_exposes_avl_and_bst_for_comparison() -> None:
+    client = TestClient(app)
+    app_module.REPORT_QUEUE = app_module.ReportQueue()
+    app_module.REPORT_PROCESSOR = app_module.ReportProcessor()
+
+    for event_id, magnitude in ((1, 4.0), (2, 6.3), (3, 5.0)):
+        client.post(
+            "/api/reports",
+            json={
+                "event_id": event_id,
+                "magnitude": magnitude,
+                "depth_km": 20.0,
+                "x_km": 0.0,
+                "y_km": 0.0,
+                "station": f"ST-{event_id}",
+                "revision": 1,
+            },
+        )
+        assert client.post("/api/queue/process").status_code == 200
+
+    state = client.get("/api/state").json()
+
+    assert state["metrics"]["avl"]["size"] == 3
+    assert state["metrics"]["bst"]["size"] == 3
+    # Same keys, different topology: the BST keeps the first insertion as root.
+    assert state["bst"]["key"]["event_id"] == 1
+    assert state["avl"]["key"]["event_id"] == 3

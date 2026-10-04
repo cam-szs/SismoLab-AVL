@@ -211,5 +211,30 @@ class BSTree:
             return 1
         return self._count_leaves(node.left) + self._count_leaves(node.right)
 
+    # ---------- export ----------
+
+    def export_to_dict(self) -> Optional[dict[str, Any]]:
+        """Export structure, height and balance factor for visualization."""
+        return self._export_node_to_dict(self.root)
+
+    def _export_node_to_dict(self, node: Optional[Node]) -> Optional[dict[str, Any]]:
+        if node is None:
+            return None
+        event = (
+            node.event.to_dict() if hasattr(node.event, "to_dict") else node.event
+        )
+        return {
+            "key": {
+                "priority": node.key.priority,
+                "magnitude_tenths": node.key.magnitude_tenths,
+                "event_id": node.key.event_id,
+            },
+            "event": event,
+            "height": node.height,
+            "factor_balanceo": node.balance_factor(),
+            "izquierdo": self._export_node_to_dict(node.left),
+            "derecho": self._export_node_to_dict(node.right),
+        }
+
     def __len__(self) -> int:
         return self.size

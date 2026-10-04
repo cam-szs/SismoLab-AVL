@@ -122,3 +122,12 @@ This project was primarily developed by the student team. The AI assistant suppo
 - **Result:** added stress-mode toggles, height maintenance without rotations, balanced-tree recovery, invariant auditing, balance checks, rotation metrics, and stress deletion coverage.
 - **Human review required:** verify the burst policy, recovery timing, and metrics against the project scenario before merging.
 - **Owner for understanding:** all three teammates.
+
+## AVL vs BST visualization and comparison mirror
+
+- **Date:** 2026-10-03
+- **Scope:** `domain/bst.py`, `domain/avl.py`, `services/report_processor.py`, `api/app.py`, `frontend/src/App.jsx`, `frontend/src/styles.css`, `tests/test_skeleton.py`, `docs/AI_CONTRIBUTIONS.md`.
+- **Request:** render the structure with circular nodes joined by straight edges and expose a parallel BST so the AVL and the BST can be compared visually.
+- **Result:** the topology exporter moved to `BSTree` (shared by the AVL through inheritance); `ReportProcessor` now keeps an unrotated `BSTree` mirror fed with the same insertions, corrections, deletions, and archival as the AVL; `/api/state`, the metrics payload, `persist`, and `load` expose the `bst` topology plus size/height/leaf metrics; the React view replaces the nested list with an SVG `TreeView` (circles, straight lines, priority colors, balance-factor badges) and shows AVL and BST side by side; added regression tests for the mirror and the API contract.
+- **Human review required:** confirm the mirror stays synchronized under corrections, archival, and deletion, and verify the SVG layout and responsive breakpoints.
+- **Owner for understanding:** all three teammates.
