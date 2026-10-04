@@ -19,6 +19,10 @@ and `T` are configurable assignment parameters, not modes. Stress recovery
 uses rotations on the existing nodes and never replaces the tree with an
 ordered-list reconstruction.
 
+The scenario owns a UTC simulation clock. Its elapsed-hour counter is kept
+for the UI, while `simulation_time` is persisted as ISO 8601 and is the only
+clock used for event-age and archival decisions.
+
 ## Request flow
 
 ```text

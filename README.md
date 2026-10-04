@@ -49,3 +49,6 @@ The application has two execution modes:
 
 The API exposes these controls through `/api/scenario/parameters`, global
 recovery through `/api/scenario/recover`, and undo through `/api/undo`.
+Temporal decisions use the UTC `simulation_time` stored in the scenario.
+Advancing the simulated clock changes archival and event-age behavior without
+depending on the machine's wall clock.

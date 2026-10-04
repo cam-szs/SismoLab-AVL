@@ -380,6 +380,53 @@ export function useScenarioState() {
     }
   };
 
+  const refreshAudit = async () => {
+    try {
+      const payload = await fetchJson(`${API_URL}/api/audit`);
+      setState((previous) => ({ ...(previous ?? {}), audit: payload }));
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo consultar la auditoría");
+    }
+  };
+
+  const listVersions = async () => {
+    try {
+      const payload = await fetchJson(`${API_URL}/api/versions`);
+      setState((previous) => ({ ...(previous ?? {}), versions: payload.versions ?? [] }));
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudieron consultar las versiones");
+    }
+  };
+
+  const saveVersion = async (name) => {
+    const normalized = name.trim();
+    if (!normalized) return;
+    setAction("version-save");
+    try {
+      await fetchJson(`${API_URL}/api/versions/${encodeURIComponent(normalized)}`, { method: "POST" });
+      await listVersions();
+    } catch (reason) {
+      setError(reason.message || "No se pudo guardar la versión");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const restoreVersion = async (name) => {
+    setAction(`version-restore-${name}`);
+    try {
+      const payload = await fetchJson(`${API_URL}/api/versions/${encodeURIComponent(name)}/restore`, { method: "POST" });
+      setState(payload.state);
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo restaurar la versión");
+    } finally {
+      setAction("");
+    }
+  };
+
   const queueItems = state?.queue ?? [];
   const activeEvents = state?.events ?? [];
   const archivedEvents = state?.history?.archived ?? [];
@@ -429,6 +476,10 @@ export function useScenarioState() {
     loadSavedState,
     downloadState,
     loadJsonFile,
+    refreshAudit,
+    listVersions,
+    saveVersion,
+    restoreVersion,
     queueItems,
     activeEvents,
     archivedEvents,
@@ -436,5 +487,7 @@ export function useScenarioState() {
     avlMetrics,
     bstMetrics,
     mapPoints,
+    audit: state?.audit ?? null,
+    versions: state?.versions ?? [],
   };
 }

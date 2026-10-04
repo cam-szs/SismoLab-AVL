@@ -122,7 +122,7 @@ def _report_from_dict(data: dict[str, Any]) -> Report:
     payload = dict(data)
     occurred = payload.get("occurred_at")
     if occurred is None:
-        occurred = datetime.now(timezone.utc).replace(microsecond=0)
+        occurred = SCENARIO.simulation_time
     else:
         occurred = datetime.fromisoformat(str(occurred).replace("Z", "+00:00")).astimezone(timezone.utc).replace(microsecond=0)
     return Report.create(
@@ -148,6 +148,7 @@ def _snapshot_state() -> dict[str, Any]:
         "mode": SCENARIO.mode,
         "parameters": SCENARIO.parameters,
         "clock": SCENARIO.clock,
+        "simulation_time": SCENARIO.simulation_time.isoformat().replace("+00:00", "Z"),
         "events": events_payload,
         "queue": queue_items,
         "history": history_payload,
@@ -173,40 +174,87 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
 
     global REPORT_QUEUE, REPORT_PROCESSOR
 
-    if isinstance(payload.get("mode"), str):
-        SCENARIO.set_mode(payload["mode"])
-    if isinstance(payload.get("clock"), int):
-        SCENARIO.clock = payload["clock"]
-        SCENARIO.values["clock"] = payload["clock"]
+    candidate_mode = payload.get("mode", SCENARIO.mode)
+    if not isinstance(candidate_mode, str):
+        raise ValueError("mode must be a string")
+    candidate_mode = candidate_mode.strip().lower()
+    if candidate_mode not in {"normal", "stress", "w", "t"}:
+        raise ValueError("mode must be one of normal or stress")
+    candidate_clock = payload.get("clock", SCENARIO.clock)
+    if not isinstance(candidate_clock, int) or isinstance(candidate_clock, bool) or candidate_clock < 0:
+        raise ValueError("clock must be a non-negative integer")
+    simulation_time_raw = payload.get(
+        "simulation_time",
+        payload.get("scenario", {}).get("simulation_time"),
+    )
+    if simulation_time_raw is None:
+        candidate_time = SCENARIO.simulation_time
+    else:
+        candidate_time = datetime.fromisoformat(
+            str(simulation_time_raw).replace("Z", "+00:00")
+        ).astimezone(timezone.utc).replace(microsecond=0)
     parameters = payload.get("parameters", payload.get("scenario", {}).get("parameters", {}))
-    if isinstance(parameters, dict):
-        SCENARIO.set_parameters(
-            W=parameters.get("W"),
-            R=parameters.get("R"),
-            L=parameters.get("L"),
-            T=parameters.get("T"),
-        )
+    if not isinstance(parameters, dict):
+        raise ValueError("parameters must be an object")
+    candidate_scenario = Scenario()
+    candidate_scenario.set_mode(candidate_mode)
+    candidate_scenario.set_parameters(
+        W=parameters.get("W"),
+        R=parameters.get("R"),
+        L=parameters.get("L"),
+        T=parameters.get("T"),
+    )
+    candidate_scenario.clock = candidate_clock
+    candidate_scenario.simulation_time = candidate_time
 
-    REPORT_QUEUE = ReportQueue()
-    for item in payload.get("queue", []):
-        REPORT_QUEUE.enqueue(_report_from_dict(item))
+    candidate_queue = ReportQueue()
+    queue_payload = payload.get("queue", [])
+    if not isinstance(queue_payload, list):
+        raise ValueError("queue must be an array")
+    for item in queue_payload:
+        if not isinstance(item, dict):
+            raise ValueError("queue entries must be objects")
+        report = _report_from_dict(item)
+        if report.occurred_at > candidate_time:
+            raise ValueError("report occurrence cannot be after simulation time")
+        candidate_queue.enqueue(report)
 
     active_events: dict[int, Event] = {}
-    for item in payload.get("events", []):
+    events_payload = payload.get("events", [])
+    if not isinstance(events_payload, list):
+        raise ValueError("events must be an array")
+    for item in events_payload:
+        if not isinstance(item, dict):
+            raise ValueError("event entries must be objects")
         event = _event_from_dict(item)
+        if event.occurred_at > candidate_time:
+            raise ValueError("event occurrence cannot be after simulation time")
         if event.event_id in active_events:
             raise ValueError(f"duplicate active event {event.event_id}")
         active_events[event.event_id] = event
 
     archived_events: dict[int, Event] = {}
-    for item in payload.get("history", {}).get("archived", []):
+    history_payload = payload.get("history", {})
+    if not isinstance(history_payload, dict):
+        raise ValueError("history must be an object")
+    archived_payload = history_payload.get("archived", [])
+    if not isinstance(archived_payload, list):
+        raise ValueError("archived history must be an array")
+    for item in archived_payload:
+        if not isinstance(item, dict):
+            raise ValueError("archived entries must be objects")
         event = _event_from_dict(item)
+        if event.occurred_at > candidate_time:
+            raise ValueError("archived occurrence cannot be after simulation time")
         if event.event_id in active_events or event.event_id in archived_events:
             raise ValueError(f"duplicate historical event {event.event_id}")
         archived_events[event.event_id] = event
 
     deleted_ids: set[int] = set()
-    for item in payload.get("history", {}).get("deleted", []):
+    deleted_payload = history_payload.get("deleted", [])
+    if not isinstance(deleted_payload, list):
+        raise ValueError("deleted history must be an array")
+    for item in deleted_payload:
         if isinstance(item, dict):
             deleted_ids.add(int(item.get("event_id", item.get("id", 0))))
         else:
@@ -215,20 +263,27 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
     if overlap:
         raise ValueError(f"identities cannot be active and deleted: {sorted(overlap)}")
 
-    REPORT_PROCESSOR = ReportProcessor(
+    candidate_processor = ReportProcessor(
         active_events=active_events,
         archived_events=archived_events,
         deleted_ids=deleted_ids,
-        populated_zone=lambda report: SCENARIO.is_populated(report.x_km, report.y_km),
-        stress_mode=SCENARIO.stress_mode,
+        populated_zone=lambda report: candidate_scenario.is_populated(report.x_km, report.y_km),
+        stress_mode=candidate_scenario.stress_mode,
     )
     topology = payload.get("avl") if load_mode == "topology" else None
     if topology is not None:
+        topology_ids: set[int] = set()
+
         def build(node_payload: dict[str, Any] | None) -> Node | None:
             if node_payload is None:
                 return None
             key_payload = node_payload["key"]
             event_id = int(key_payload["event_id"])
+            if event_id in topology_ids:
+                raise ValueError(f"duplicate topology event {event_id}")
+            topology_ids.add(event_id)
+            if event_id not in active_events:
+                raise ValueError(f"topology references unknown event {event_id}")
             event = active_events[event_id]
             stored_key = (
                 int(key_payload["priority"]),
@@ -249,11 +304,26 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
                 raise ValueError(f"invalid stored height for event {event_id}")
             return node
 
-        REPORT_PROCESSOR.tree.root = build(topology)
-        REPORT_PROCESSOR.tree.size = len(active_events)
-    audit = REPORT_PROCESSOR.audit_report()
-    if not SCENARIO.stress_mode and not audit["balanced"]:
+        candidate_processor.tree.root = build(topology)
+        if topology_ids != set(active_events):
+            raise ValueError("topology must contain every active event exactly once")
+        candidate_processor.tree.size = len(active_events)
+    audit = candidate_processor.audit_report()
+    if not candidate_scenario.stress_mode and not audit["balanced"]:
         raise ValueError("normal snapshot must contain a balanced AVL")
+
+    candidate_scenario.values["clock"] = candidate_clock
+    candidate_scenario.values["simulation_time"] = candidate_time.isoformat().replace("+00:00", "Z")
+    SCENARIO.mode = candidate_scenario.mode
+    SCENARIO.clock = candidate_scenario.clock
+    SCENARIO.simulation_time = candidate_scenario.simulation_time
+    SCENARIO.values = candidate_scenario.values
+    SCENARIO.association_window_hours = candidate_scenario.association_window_hours
+    SCENARIO.association_distance_km = candidate_scenario.association_distance_km
+    SCENARIO.access_depth_limit = candidate_scenario.access_depth_limit
+    SCENARIO.archive_age_hours = candidate_scenario.archive_age_hours
+    REPORT_QUEUE = candidate_queue
+    REPORT_PROCESSOR = candidate_processor
 
 
 def _association_payload() -> dict[str, Any]:
@@ -292,6 +362,7 @@ def _scenario_payload() -> dict[str, Any]:
     return {
         "mode": SCENARIO.mode,
         "clock": SCENARIO.clock,
+        "simulation_time": SCENARIO.simulation_time.isoformat().replace("+00:00", "Z"),
         "parameters": SCENARIO.parameters,
         "values": SCENARIO.values.copy(),
     }
@@ -425,7 +496,7 @@ def enqueue_report(payload: dict[str, Any]) -> dict[str, Any]:
 
     occurred_at_raw = payload.get("occurred_at")
     if occurred_at_raw is None:
-        occurred_at = datetime.now(timezone.utc).replace(microsecond=0)
+        occurred_at = SCENARIO.simulation_time
     else:
         occurred_at = datetime.fromisoformat(str(occurred_at_raw).replace("Z", "+00:00")).astimezone(timezone.utc).replace(microsecond=0)
 
@@ -439,6 +510,8 @@ def enqueue_report(payload: dict[str, Any]) -> dict[str, Any]:
         station=str(payload["station"]),
         revision=int(payload.get("revision", 1)),
     )
+    if report.occurred_at > SCENARIO.simulation_time:
+        raise ValueError("report occurrence cannot be after simulation time")
     _record_undo("enqueue report")
     REPORT_QUEUE.enqueue(report)
     report_payload = report.to_dict()
@@ -467,7 +540,7 @@ def archive_branch() -> dict[str, Any]:
     """Archive the largest eligible low-priority old subtree."""
     _record_undo("archive eligible branch")
     result = REPORT_PROCESSOR.archive_branch(
-        clock=datetime.now(timezone.utc),
+        clock=SCENARIO.simulation_time,
         age_hours=SCENARIO.archive_age_hours,
     )
     return {

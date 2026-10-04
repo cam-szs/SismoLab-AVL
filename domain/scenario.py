@@ -1,6 +1,7 @@
 """Scenario state, execution mode, and configurable academic parameters."""
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
@@ -37,6 +38,9 @@ class Scenario:
     zones: dict[str, Zone] = field(default_factory=dict)
     stations: dict[str, Station] = field(default_factory=dict)
     clock: int = 0
+    simulation_time: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(microsecond=0)
+    )
     mode: str = "normal"
     values: dict[str, Any] = field(default_factory=dict)
     association_window_hours: float = 48.0
@@ -49,7 +53,9 @@ class Scenario:
         if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
             raise ValueError("amount must be a non-negative integer")
         self.clock += amount
+        self.simulation_time += timedelta(hours=amount)
         self.values["clock"] = self.clock
+        self.values["simulation_time"] = self.simulation_time.isoformat().replace("+00:00", "Z")
 
     def set_mode(self, mode: str) -> None:
         """Set the execution mode.

@@ -234,6 +234,52 @@ h2 {
   opacity: 0;
   cursor: pointer;
 }
+
+.audit-version-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.audit-summary,
+.version-list {
+  display: grid;
+  gap: 8px;
+}
+
+.audit-summary small {
+  color: var(--muted, #6b7770);
+}
+
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.version-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(27, 58, 53, 0.12);
+}
+
+.version-list button {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
 .action-button:disabled,
 .mode-switcher button:disabled,
 .clock-actions button:disabled,

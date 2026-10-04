@@ -21,6 +21,15 @@ test("App renders the main observatory shell", () => {
   expect(screen.getByText(/OBSERVATORIO SISMICO SIMULADO/i)).toBeInTheDocument();
 });
 
+test("App renders the audit and persistent versions controls", () => {
+  render(<App />);
+
+  expect(screen.getByText("AUDITORÍA")).toBeInTheDocument();
+  expect(screen.getByText("VERSIONES")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Guardar versión" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Actualizar lista" })).toBeInTheDocument();
+});
+
 test("EventList shows event details and calls the recovery action", () => {
   const handleRecover = vi.fn();
 

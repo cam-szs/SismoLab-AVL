@@ -300,6 +300,52 @@ function ArchivePanel({ archivedEvents, recoverEvent, action }) {
   );
 }
 
+function AuditVersionsPanel({ audit, versions, refreshAudit, listVersions, saveVersion, restoreVersion, action }) {
+  const save = () => {
+    const name = window.prompt("Nombre de la versión (ejemplo: demo-normal):");
+    if (name) saveVersion(name);
+  };
+
+  return (
+    <section className="audit-version-grid">
+      <article className="workspace-card">
+        <SectionHeader index="07" label="INTEGRIDAD" title="AUDITORÍA" />
+        <div className="panel-actions">
+          <ActionButton label="Actualizar auditoría" onClick={refreshAudit} secondary />
+        </div>
+        {audit ? (
+          <div className="audit-summary">
+            <strong>{audit.balanced ? "Estructura válida" : "Requiere revisión"}</strong>
+            <span>{audit.unbalanced_events?.length ?? 0} nodos desbalanceados</span>
+            <small>{audit.metadata_errors?.length ? audit.metadata_errors.join("; ") : "Sin errores de metadatos"}</small>
+          </div>
+        ) : <EmptyState message="Pulsa actualizar para auditar el estado" compact />}
+      </article>
+      <article className="workspace-card">
+        <SectionHeader index="08" label="PERSISTENCIA" title="VERSIONES" />
+        <div className="panel-actions">
+          <ActionButton label="Guardar versión" onClick={save} secondary disabled={Boolean(action)} />
+          <ActionButton label="Actualizar lista" onClick={listVersions} secondary />
+        </div>
+        {versions.length === 0 ? (
+          <EmptyState message="Sin versiones persistidas" compact />
+        ) : (
+          <ul className="version-list">
+            {versions.map((name) => (
+              <li key={name}>
+                <span>{name}</span>
+                <button type="button" onClick={() => restoreVersion(name)} disabled={Boolean(action)}>
+                  {action === `version-restore-${name}` ? "..." : "Restaurar"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </article>
+    </section>
+  );
+}
+
 export default function App() {
   const {
     state,
@@ -332,6 +378,10 @@ export default function App() {
     loadSavedState,
     downloadState,
     loadJsonFile,
+    refreshAudit,
+    listVersions,
+    saveVersion,
+    restoreVersion,
     queueItems,
     activeEvents,
     archivedEvents,
@@ -339,6 +389,8 @@ export default function App() {
     avlMetrics,
     bstMetrics,
     mapPoints,
+    audit,
+    versions,
     setEditMode,
     setEditForm,
   } = useScenarioState();
@@ -414,6 +466,15 @@ export default function App() {
       <ArchivePanel
         archivedEvents={archivedEvents}
         recoverEvent={recoverEvent}
+        action={action}
+      />
+      <AuditVersionsPanel
+        audit={audit}
+        versions={versions}
+        refreshAudit={refreshAudit}
+        listVersions={listVersions}
+        saveVersion={saveVersion}
+        restoreVersion={restoreVersion}
         action={action}
       />
     </main>
