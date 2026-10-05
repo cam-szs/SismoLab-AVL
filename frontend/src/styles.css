@@ -1205,3 +1205,98 @@ h2 {
 .tree-panel {
   overflow-x: auto;
 }
+
+/* ---------- action log ---------- */
+
+.action-log {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.action-log li {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #e7efe8;
+  font-size: 13px;
+}
+.action-log li div {
+  display: grid;
+  gap: 2px;
+}
+.action-log small,
+.action-log time {
+  color: var(--muted);
+  font: 11px "DM Mono", monospace;
+}
+.action-seq {
+  font: 600 12px "DM Mono", monospace;
+  color: var(--primary);
+}
+.action-delta {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.action-delta span {
+  padding: 2px 6px;
+  border-radius: 6px;
+  font: 11px "DM Mono", monospace;
+}
+.action-delta .up { background: #d6eadc; color: #2f5d52; }
+.action-delta .down { background: #f6e2dc; color: #9c3a26; }
+
+/* ---------- station select and tree legend ---------- */
+
+.field-grid select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #c5d1c8;
+  background: #fff;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font: 500 14px "Space Grotesk", sans-serif;
+  color: #17211f;
+}
+.tree-expensive {
+  fill: none;
+  stroke: #1b3a35;
+  stroke-width: 2.5;
+  stroke-dasharray: 4 3;
+}
+.tree-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
+  font: 500 11px "DM Mono", monospace;
+  color: var(--muted);
+}
+.tree-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tree-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.tree-legend .dot.prio-3 { background: #e2937f; border: 1px solid #9c3a26; }
+.tree-legend .dot.prio-2 { background: #f4d79b; border: 1px solid #a97a1f; }
+.tree-legend .dot.prio-1 { background: #dfe9e1; border: 1px solid #63806f; }
+.tree-legend .ring { border: 2px dashed #1b3a35; }
+
+@media (max-width: 800px) {
+  .action-log li {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+}

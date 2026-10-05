@@ -41,7 +41,9 @@ export function findTreeNode(root, eventId) {
   return findTreeNode(root.izquierdo, eventId) ?? findTreeNode(root.derecho, eventId);
 }
 
-export default function TreeView({ root, tone = "avl", onSelect }) {
+// `depthLimit` (L) enables the expensive-access mark: a high-priority node
+// deeper than L gets a dashed outer ring, independent of the priority fill.
+export default function TreeView({ root, tone = "avl", onSelect, depthLimit = null }) {
   const { nodes, edges, width, height } = layoutTree(root);
   if (nodes.length === 0) {
     return <div className="empty-state compact">Sin nodos</div>;
@@ -81,10 +83,11 @@ export default function TreeView({ root, tone = "avl", onSelect }) {
         const reviewed = node.event?.status === "reviewed";
         const magnitude = (node.key.magnitude_tenths / 10).toFixed(1);
         const interactive = Boolean(onSelect);
+        const expensive = depthLimit != null && node.key.priority === 3 && position.y > depthLimit;
         return (
           <g
             key={node.key.event_id}
-            className={`tree-node-group prio-${node.key.priority}${Math.abs(factor) > 1 ? " is-unbalanced" : ""}${reviewed ? " is-reviewed" : ""}${interactive ? " is-clickable" : ""}`}
+            className={`tree-node-group prio-${node.key.priority}${Math.abs(factor) > 1 ? " is-unbalanced" : ""}${reviewed ? " is-reviewed" : ""}${expensive ? " is-expensive" : ""}${interactive ? " is-clickable" : ""}`}
             onClick={interactive ? () => onSelect(node) : undefined}
             onKeyDown={interactive
               ? (event) => {
@@ -97,6 +100,11 @@ export default function TreeView({ root, tone = "avl", onSelect }) {
             role={interactive ? "button" : undefined}
             tabIndex={interactive ? 0 : undefined}
           >
+            {expensive && (
+              <circle className="tree-expensive" cx={point.x} cy={point.y} r={NODE_RADIUS + 5}>
+                <title>{`Acceso costoso: profundidad ${position.y} > L = ${depthLimit}`}</title>
+              </circle>
+            )}
             <circle className="tree-circle" cx={point.x} cy={point.y} r={NODE_RADIUS} />
             <text className="tree-label-id" x={point.x} y={point.y - 2} textAnchor="middle">
               #{node.key.event_id}

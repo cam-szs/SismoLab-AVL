@@ -105,9 +105,7 @@ function ScenarioControls({ state, action, updateMode, updateParameters, advance
 function StateActions({
   action,
   recoverBalance,
-  saveState,
   downloadState,
-  loadSavedState,
   loadJsonFile,
   undoLastAction,
   archiveBranch,
@@ -120,9 +118,7 @@ function StateActions({
         isLoading={action === "recover-balance"}
         disabled={Boolean(action)}
       />
-      <ActionButton label="Guardar en backend" onClick={saveState} />
-      <ActionButton label="Descargar JSON" onClick={downloadState} secondary />
-      <ActionButton label="Cargar guardado" onClick={loadSavedState} secondary />
+      <ActionButton label="Exportar JSON" onClick={downloadState} />
       <label className="action-button secondary file-action">
         {action === "load-file" ? "Cargando..." : "Cargar topología JSON"}
         <input type="file" accept="application/json,.json" onChange={(event) => loadJsonFile(event, "topology")} disabled={Boolean(action)} />
@@ -153,15 +149,26 @@ function TreeSection({ state, avlMetrics, bstMetrics, openNode, openEvent, actio
   return (
     <WorkspaceCard className="tree-card" index="01" label="ESTRUCTURA" title="AVL VS BST">
       <div className="avl-summary">
-        <span>{avlMetrics.balanced === false ? "AVL en modo estrés" : "AVL balanceado"}</span>
+        <span>
+          {state?.mode === "stress"
+            ? `Modo estrés: rotaciones aplazadas${avlMetrics.balanced === false ? " · el árbol NO cumple la condición AVL" : ""}`
+            : "Modo normal: AVL balanceado"}
+        </span>
         <small>{avlMetrics.size ?? 0} nodos · {avlMetrics.leaves ?? 0} hojas</small>
       </div>
       <div className="avl-tree" aria-label="Estructura del árbol AVL">
         <div className="tree-compare">
           <div className="tree-panel">
-            <div className="tree-panel-title">AVL balanceado</div>
+            <div className="tree-panel-title">
+              AVL · altura {avlMetrics.height ?? 0}{avlMetrics.balanced === false ? " · desbalanceado (estrés)" : ""}
+            </div>
             {state?.avl ? (
-              <TreeView root={state.avl} tone="avl" onSelect={(node) => openNode(node)} />
+              <TreeView
+                root={state.avl}
+                tone="avl"
+                onSelect={(node) => openNode(node)}
+                depthLimit={state?.parameters?.L ?? null}
+              />
             ) : (
               <EmptyState message="Sin estructura AVL" compact />
             )}
@@ -174,6 +181,13 @@ function TreeSection({ state, avlMetrics, bstMetrics, openNode, openEvent, actio
               <EmptyState message="Sin estructura BST" compact />
             )}
           </div>
+        </div>
+        <div className="tree-legend">
+          <span><i className="dot prio-3" /> Prioridad alta</span>
+          <span><i className="dot prio-2" /> Media</span>
+          <span><i className="dot prio-1" /> Baja</span>
+          <span><i className="ring" /> Acceso costoso (profundidad &gt; L = {state?.parameters?.L ?? "—"})</span>
+          <span>b = factor de balance · ✓ revisado · • pendiente</span>
         </div>
       </div>
       <EventList
@@ -212,7 +226,7 @@ function MapPanel({ zones, mapPoints, associations, openEvent }) {
   );
 }
 
-function QueuePanel({ form, handleInputChange, submitReport, processNextReport, queueItems, action, autoProcess, setAutoProcess, stepDelay, setStepDelay }) {
+function QueuePanel({ form, handleInputChange, submitReport, processNextReport, queueItems, action, autoProcess, setAutoProcess, stepDelay, setStepDelay, stations }) {
   return (
     <article className="workspace-card queue-card">
       <SectionHeader index="03" label="RECEPCIÓN" title="FIFO" />
@@ -239,10 +253,7 @@ function QueuePanel({ form, handleInputChange, submitReport, processNextReport, 
             <span>Y</span>
             <input name="y_km" value={form.y_km} onChange={handleInputChange} type="number" step="0.1" required />
           </label>
-          <label>
-            <span>Estación</span>
-            <input name="station" value={form.station} onChange={handleInputChange} type="text" required />
-          </label>
+          <StationSelect value={form.station} onChange={handleInputChange} stations={stations} />
           <label>
             <span>Revisión</span>
             <input name="revision" value={form.revision} onChange={handleInputChange} type="number" min="1" step="1" required />
@@ -303,7 +314,7 @@ function QueuePanel({ form, handleInputChange, submitReport, processNextReport, 
   );
 }
 
-function ArchivePanel({ archivedEvents, recoverEvent, action }) {
+function ArchivePanel({ archivedEvents, openEvent, action }) {
   return (
     <section className="archive-panel">
       <article className="workspace-card archive-card">
@@ -314,7 +325,7 @@ function ArchivePanel({ archivedEvents, recoverEvent, action }) {
           events={archivedEvents}
           kind="archive"
           emptyMessage="Sin eventos archivados"
-          onRecover={(eventId) => recoverEvent(eventId)}
+          onOpen={(eventId) => openEvent(eventId)}
           busy={Boolean(action)}
         />
       </article>
@@ -461,6 +472,81 @@ function ComparisonPanel({ comparison, loadComparison, action }) {
   );
 }
 
+const DELTA_LABELS = {
+  created: "altas",
+  corrections: "correcciones",
+  confirmations: "confirmaciones",
+  conflicts: "conflictos",
+  stale: "antiguos",
+  rejected_deleted: "rechazados (eliminado)",
+  recoveries: "recuperaciones",
+  deletions: "eliminaciones",
+  archive_operations: "archivos masivos",
+  archived_events: "archivados",
+  rotate_left: "giros izq.",
+  rotate_right: "giros der.",
+  active: "activos",
+  archived: "históricos",
+  queue: "en cola",
+};
+
+const ACTION_LABELS = {
+  "create event": "Crear evento",
+  "correct event": "Corregir evento",
+  "delete event": "Eliminar evento",
+  "mark event reviewed": "Marcar revisado",
+  "enqueue report": "Encolar reporte",
+  "process queued report": "Procesar reporte",
+  "archive eligible branch": "Archivar rama",
+  "archive single event": "Archivar evento",
+  "recover archived event": "Recuperar archivado",
+  "global AVL recovery": "Recuperación global",
+  "change execution mode": "Cambiar modo",
+  "change scenario parameters": "Cambiar parámetros",
+  "advance simulation clock": "Avanzar reloj",
+  "load JSON": "Cargar JSON",
+  "load JSON from path": "Cargar JSON",
+  "save version": "Guardar versión",
+  "restore version": "Restaurar versión",
+  undo: "Deshacer",
+};
+
+function ActionLogPanel({ actions }) {
+  return (
+    <section className="archive-panel">
+      <article className="workspace-card">
+        <SectionHeader index="13" label="REGISTRO" title="HISTORIAL DE ACCIONES" />
+        <p className="form-help">
+          Cada acción muestra qué contadores cambió. Deshacer agrega una entrada; no borra la acción revertida.
+        </p>
+        {actions.length === 0 ? (
+          <EmptyState message="Aún no hay acciones" compact />
+        ) : (
+          <ol className="action-log">
+            {actions.map((item) => (
+              <li key={item.sequence}>
+                <span className="action-seq">{item.sequence}</span>
+                <div>
+                  <strong>{ACTION_LABELS[item.label] ?? item.label}</strong>
+                  <small>{item.detail}</small>
+                </div>
+                <div className="action-delta">
+                  {Object.entries(item.delta).map(([name, value]) => (
+                    <span key={name} className={value > 0 ? "up" : "down"}>
+                      {value > 0 ? "+" : ""}{value} {DELTA_LABELS[name] ?? name}
+                    </span>
+                  ))}
+                </div>
+                <time>{item.simulation_time.replace("T", " ").replace("Z", "")} · {item.mode}</time>
+              </li>
+            ))}
+          </ol>
+        )}
+      </article>
+    </section>
+  );
+}
+
 function AuditVersionsPanel({ audit, versions, refreshAudit, listVersions, saveVersion, restoreVersion, action }) {
   const save = () => {
     const name = window.prompt("Nombre de la versión (ejemplo: demo-normal):");
@@ -527,10 +613,24 @@ const CREATE_FIELDS = [
   ["depth_km", "Profundidad (km)", { type: "number", min: "0", max: "700", step: "0.1" }],
   ["x_km", "Epicentro X (km)", { type: "number", min: "0", max: "1000", step: "0.1" }],
   ["y_km", "Epicentro Y (km)", { type: "number", min: "0", max: "1000", step: "0.1" }],
-  ["station", "Estación", { type: "text" }],
 ];
 
-function EventToolsPanel({ createForm, handleCreateChange, submitCreate, openEvent, action }) {
+function StationSelect({ value, onChange, stations }) {
+  return (
+    <label>
+      <span>Estación</span>
+      <select name="station" value={value} onChange={onChange} required>
+        {stations.map((station) => (
+          <option key={station.code} value={station.code}>
+            {station.code} ({station.x_km}, {station.y_km})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function EventToolsPanel({ createForm, handleCreateChange, submitCreate, openEvent, action, stations }) {
   const lookup = (domEvent) => {
     domEvent.preventDefault();
     openEvent(new FormData(domEvent.currentTarget).get("lookup_id"));
@@ -547,6 +647,7 @@ function EventToolsPanel({ createForm, handleCreateChange, submitCreate, openEve
               <input name={name} value={createForm[name]} onChange={handleCreateChange} required {...attributes} />
             </label>
           ))}
+          <StationSelect value={createForm.station} onChange={handleCreateChange} stations={stations} />
           <label className="field-wide">
             <span>Ocurrencia (UTC, vacío = reloj)</span>
             <input name="occurred_at" value={createForm.occurred_at} onChange={handleCreateChange} type="datetime-local" step="1" />
@@ -652,6 +753,8 @@ export default function App() {
     runQuery,
     queryResult,
     zones,
+    stations,
+    actions,
     comparison,
     loadComparison,
     autoProcess,
@@ -671,15 +774,11 @@ export default function App() {
     handleInputChange,
     submitReport,
     processNextReport,
-    archiveEvent,
-    recoverEvent,
     recoverBalance,
     undoLastAction,
     archiveBranch,
     reviewEvent,
     deleteEvent,
-    saveState,
-    loadSavedState,
     downloadState,
     loadJsonFile,
     refreshAudit,
@@ -726,9 +825,7 @@ export default function App() {
         <StateActions
           action={action}
           recoverBalance={recoverBalance}
-          saveState={saveState}
           downloadState={downloadState}
-          loadSavedState={loadSavedState}
           loadJsonFile={loadJsonFile}
           undoLastAction={undoLastAction}
           archiveBranch={archiveBranch}
@@ -761,6 +858,7 @@ export default function App() {
             setAutoProcess={setAutoProcess}
             stepDelay={stepDelay}
             setStepDelay={setStepDelay}
+            stations={stations}
           />
         </div>
       </section>
@@ -772,6 +870,7 @@ export default function App() {
           submitCreate={submitCreate}
           openEvent={openEvent}
           action={action}
+          stations={stations}
         />
         <QueriesPanel runQuery={runQuery} queryResult={queryResult} openEvent={openEvent} action={action} />
       </section>
@@ -783,9 +882,10 @@ export default function App() {
 
       <ArchivePanel
         archivedEvents={archivedEvents}
-        recoverEvent={recoverEvent}
+        openEvent={openEvent}
         action={action}
       />
+      <ActionLogPanel actions={actions} />
       <AuditVersionsPanel
         audit={audit}
         versions={versions}
@@ -805,10 +905,6 @@ export default function App() {
         onCancelEdit={() => setEditMode(false)}
         onSubmitEdit={submitNodeEdit}
         onReview={() => reviewEvent(selectedId)}
-        onArchive={async () => {
-          await archiveEvent(selectedId);
-          closeNode();
-        }}
         onDelete={() => deleteEvent(selectedId)}
         onClose={closeNode}
         busy={Boolean(action)}

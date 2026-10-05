@@ -39,7 +39,6 @@ export default function NodeDetails({
   onCancelEdit,
   onSubmitEdit,
   onReview,
-  onArchive,
   onDelete,
   onClose,
   busy,
@@ -170,9 +169,6 @@ export default function NodeDetails({
             </button>
             <button type="button" className="action-button secondary" onClick={onStartEdit} disabled={busy}>
               Corregir
-            </button>
-            <button type="button" className="action-button secondary" onClick={onArchive} disabled={busy}>
-              Archivar
             </button>
             <button type="button" className="action-button danger" onClick={onDelete} disabled={busy}>
               Eliminar

@@ -72,7 +72,7 @@ def test_corrupt_json_does_not_replace_live_state() -> None:
         "depth_km": 10.0,
         "x_km": 1.0,
         "y_km": 1.0,
-        "station": "ST-90",
+        "station": "ST-1",
     }
     assert client.post("/api/reports", json=payload).status_code == 200
     assert client.post("/api/queue/process").status_code == 200

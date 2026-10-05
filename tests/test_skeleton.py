@@ -214,7 +214,7 @@ def test_archive_endpoints_update_history_and_active_catalog() -> None:
         "depth_km": 18.0,
         "x_km": 10.0,
         "y_km": 20.0,
-        "station": "ST-10",
+        "station": "ST-1",
         "revision": 1,
     }
 
@@ -272,7 +272,7 @@ def test_api_load_rehydrates_queue_and_history() -> None:
         "depth_km": 18.0,
         "x_km": 8.0,
         "y_km": 12.0,
-        "station": "ST-30",
+        "station": "ST-3",
         "revision": 1,
     }
     enqueue = client.post("/api/reports", json=payload)
@@ -355,7 +355,7 @@ def test_api_exposes_avl_metrics_and_event_mutation_controls() -> None:
         "depth_km": 20.0,
         "x_km": 10.0,
         "y_km": 20.0,
-        "station": "ST-51",
+        "station": "ST-5",
         "revision": 1,
     }
     assert client.post("/api/reports", json=payload).status_code == 200
@@ -412,7 +412,7 @@ def test_report_queue_api_accepts_new_reports() -> None:
         "depth_km": 12.4,
         "x_km": 10.0,
         "y_km": 20.0,
-        "station": "ST-05",
+        "station": "ST-5",
         "revision": 1,
     }
 
@@ -440,7 +440,7 @@ def test_association_api_returns_reference_links() -> None:
             "depth_km": 20.0,
             "x_km": 0.0,
             "y_km": 0.0,
-            "station": "ST-40",
+            "station": "ST-4",
             "revision": 1,
             "occurred_at": (base_time).isoformat(),
         },
@@ -450,7 +450,7 @@ def test_association_api_returns_reference_links() -> None:
             "depth_km": 18.0,
             "x_km": 8.0,
             "y_km": 0.0,
-            "station": "ST-41",
+            "station": "ST-1",
             "revision": 1,
             "occurred_at": (base_time.replace(hour=9)).isoformat(),
         },

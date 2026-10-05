@@ -318,3 +318,61 @@ def test_traversals_and_indicators_are_exposed(client: TestClient) -> None:
     assert state["metrics"]["by_priority"] == {"1": 3, "2": 0, "3": 0}
     assert state["metrics"]["pending_attention"] == 3
     assert state["metrics"]["indicators"]["discarded_reports"] == 0
+
+
+# ---------- stations, fixed paths and the action log ----------
+
+def test_unknown_stations_are_rejected_everywhere(client: TestClient) -> None:
+    body = {"event_id": 1, "magnitude": 3.0, "depth_km": 10.0, "x_km": 1.0, "y_km": 1.0,
+            "occurred_at": "2026-09-10T10:00:00Z", "station": "ST-99"}
+    assert "unknown station" in client.post("/api/events", json=body).json()["error"]
+    assert "unknown station" in client.post("/api/reports", json=body).json()["error"]
+
+    document = insertion_file([1])
+    document["events"][0]["station"] = "ST-99"
+    response = client.post("/api/load-json", json={"document": document, "mode": "insertions"})
+    assert response.status_code == 400
+    assert client.get("/api/state").json()["metrics"]["active"] == 0
+
+
+def test_server_files_need_a_user_chosen_path(client: TestClient) -> None:
+    assert "path is required" in client.post("/api/persist", json={}).json()["error"]
+    assert "path is required" in client.post("/api/load", json={}).json()["error"]
+
+
+def test_rejected_actions_leave_no_undo_step(client: TestClient) -> None:
+    depth = len(app_module.UNDO_STACK)
+    assert client.post("/api/scenario/mode", json={"mode": "X"}).status_code == 400
+    assert client.post("/api/scenario/parameters", json={"W": -1}).status_code == 400
+    assert client.post("/api/scenario/clock", json={"amount": -2}).status_code == 400
+    assert client.post("/api/load-json", json={"document": {"events": "bad"}}).status_code == 400
+    assert len(app_module.UNDO_STACK) == depth
+
+
+def test_action_log_explains_metric_changes(client: TestClient) -> None:
+    app_module.ACTION_LOG.clear()
+    for event_id in (1, 2, 3):
+        create(client, event_id, 3.0)
+    client.post("/api/undo")
+
+    actions = client.get("/api/state").json()["actions"]
+
+    assert [item["label"] for item in actions] == ["undo", "create event", "create event", "create event"]
+    third = actions[1]
+    assert third["delta"] == {"created": 1, "RR": 1, "rotate_left": 1, "active": 1}
+    assert "event 3" in third["detail"]
+    assert actions[0]["delta"]["active"] == -1
+    assert [item["sequence"] for item in actions] == [4, 3, 2, 1]
+
+
+def test_leaving_stress_mode_recovers_and_logs_the_cost(client: TestClient) -> None:
+    app_module.ACTION_LOG.clear()
+    client.post("/api/scenario/mode", json={"mode": "stress"})
+    for event_id in range(1, 8):
+        create(client, event_id, 3.0)
+
+    state = client.post("/api/scenario/mode", json={"mode": "normal"}).json()
+
+    assert state["metrics"]["avl"]["balanced"] is True
+    assert "global recovery applied" in state["actions"][0]["detail"]
+    assert state["counters"]["stats"]["recoveries"] == 1

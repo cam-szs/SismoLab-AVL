@@ -31,7 +31,7 @@ export default function EventList({
                   </span>
                 </div>
 
-                {kind === "archive" ? (
+                {kind === "archive" && onRecover ? (
                   <button
                     type="button"
                     className="recover-button"

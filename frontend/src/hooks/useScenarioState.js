@@ -9,7 +9,7 @@ export const emptyForm = {
   x_km: "",
   y_km: "",
   occurred_at: "",
-  station: "ST-",
+  station: "ST-1",
   revision: "1",
 };
 
@@ -20,7 +20,7 @@ export const emptyCreateForm = {
   x_km: "",
   y_km: "",
   occurred_at: "",
-  station: "ST-",
+  station: "ST-1",
 };
 
 // <input type="datetime-local"> has no zone; the observatory works in UTC,
@@ -533,43 +533,22 @@ export function useScenarioState() {
     }
   };
 
-  const saveState = async () => {
+  // Export the live scenario as a file the user saves wherever they choose
+  // (section 12: no fixed paths). The action log is history, not state.
+  const downloadState = async () => {
     try {
-      const payload = await fetchJson(`${API_URL}/api/persist`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state: state ?? {}, path: "data/scenario_state.json" }),
-      });
-      setState((previous) => ({ ...(previous ?? {}), ...payload.state }));
-      setError("");
+      const { actions, ...live } = await fetchJson(`${API_URL}/api/state`);
+      const blob = new Blob([JSON.stringify(live, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `sismolab-${live.mode}-${live.simulation_time.replace(/[:]/g, "")}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setNotice(`Escenario exportado (${live.metrics.active} activos, modo ${live.mode}).`);
     } catch (reason) {
-      setError(reason.message || "No se pudo guardar el estado");
+      setError(reason.message || "No se pudo exportar el escenario");
     }
-  };
-
-  const loadSavedState = async () => {
-    try {
-      const payload = await fetchJson(`${API_URL}/api/load`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: "data/scenario_state.json" }),
-      });
-      setState(payload.state ?? payload);
-      setError("");
-    } catch (reason) {
-      setError(reason.message || "No se pudo cargar el estado guardado");
-    }
-  };
-
-  const downloadState = () => {
-    const payload = JSON.stringify(state ?? {}, null, 2);
-    const blob = new Blob([payload], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "sismolab-scenario.json";
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   const loadJsonFile = async (event, mode = "topology") => {
@@ -685,6 +664,8 @@ export function useScenarioState() {
     expensive: !archived && event.priority === 3 && (depths[event.id] ?? 0) > depthLimit,
   }));
   const zones = state?.scenario?.zones ?? [];
+  const stations = state?.scenario?.stations ?? [];
+  const actions = state?.actions ?? [];
 
   return {
     state,
@@ -703,6 +684,8 @@ export function useScenarioState() {
     runQuery,
     queryResult,
     zones,
+    stations,
+    actions,
     comparison,
     loadComparison,
     autoProcess,
@@ -735,8 +718,6 @@ export function useScenarioState() {
     reviewEvent,
     correctEvent,
     deleteEvent,
-    saveState,
-    loadSavedState,
     downloadState,
     loadJsonFile,
     refreshAudit,

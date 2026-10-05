@@ -25,7 +25,6 @@ from domain.node import Node
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_STATE_PATH = PROJECT_ROOT / "data" / "scenario_state.json"
 SCENARIO = Scenario()
 REPORT_QUEUE: ReportQueue[Report] = ReportQueue()
 REPORT_PROCESSOR = ReportProcessor(
@@ -33,6 +32,11 @@ REPORT_PROCESSOR = ReportProcessor(
 )
 ASSOCIATION_SERVICE = AssociationService()
 UNDO_STACK: UndoStack[Snapshot] = UndoStack()
+# Append-only log of user actions (sections 6 and 14). It records history, so
+# it is not part of the restorable state: undoing adds an entry instead of
+# erasing the action it reverts.
+ACTION_LOG: list[dict[str, Any]] = []
+ACTION_LOG_LIMIT = 300
 VERSIONS: dict[str, dict[str, Any]] = {}
 VERSION_DIR = PROJECT_ROOT / "data" / "versions"
 
@@ -226,7 +230,9 @@ def _insertion_event(data: dict[str, Any], scenario: Scenario) -> Event:
     event_id = data.get("id", data.get("event_id"))
     if isinstance(event_id, bool) or not isinstance(event_id, int):
         raise ValueError("event id must be an integer")
-    stations = data.get("stations") or [data.get("station", "LOAD")]
+    stations = data.get("stations") or ([data["station"]] if data.get("station") else [])
+    if not stations:
+        raise ValueError(f"event {data.get('id', data.get('event_id'))}: station is required")
     report = Report.create(
         event_id=event_id,
         magnitude=_number(data, "magnitude"),
@@ -356,6 +362,7 @@ def _hydrate(payload: dict[str, Any], *, load_mode: str) -> None:
         report = _report_from_dict(item)
         if report.occurred_at > candidate_time:
             raise ValueError("report occurrence cannot be after simulation time")
+        _require_station(report.station, candidate_scenario.stations)
         candidate_queue.enqueue(report)
 
     active_events: dict[int, Event] = {}
@@ -407,6 +414,8 @@ def _hydrate(payload: dict[str, Any], *, load_mode: str) -> None:
         raise ValueError(f"identities cannot be active and deleted: {sorted(overlap)}")
     # The stored populated flag is derived data: it must match the zones.
     for event in [*active_events.values(), *archived_events.values()]:
+        for station in event.stations:
+            _require_station(station, candidate_scenario.stations)
         expected = candidate_scenario.is_populated(event.x_km, event.y_km)
         if event.populated_zone != expected:
             raise ValueError(
@@ -516,6 +525,57 @@ def _capture_undo(label: str) -> Snapshot:
     return Snapshot(label=label, state=deepcopy(_snapshot_state()))
 
 
+def _require_path(payload: dict[str, Any]) -> str:
+    """Server-side files are only read or written at a path the user chose."""
+    path = payload.get("path")
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("path is required: the file must be chosen by the user")
+    return path
+
+
+def _require_station(code: str, stations: dict[str, Any] | None = None) -> None:
+    """Stations are scenario parameters and fixed during a run (section 1)."""
+    known = SCENARIO.stations if stations is None else stations
+    if code not in known:
+        raise ValueError(f"unknown station {code!r}; scenario stations: {', '.join(sorted(known))}")
+
+
+def _counter_totals() -> dict[str, int]:
+    counters = REPORT_PROCESSOR.counters()
+    return {
+        **counters["stats"],
+        **counters["rotations"],
+        "active": len(REPORT_PROCESSOR.active_events),
+        "archived": len(REPORT_PROCESSOR.archived_events),
+        "queue": len(REPORT_QUEUE),
+    }
+
+
+def _log_action(label: str, before: dict[str, int], detail: str = "") -> None:
+    """Record an action with the counters it changed, so its metrics can be explained."""
+    after = _counter_totals()
+    delta = {
+        name: after[name] - before.get(name, 0)
+        for name in after
+        if after[name] != before.get(name, 0)
+    }
+    sequence = ACTION_LOG[-1]["sequence"] + 1 if ACTION_LOG else 1
+    ACTION_LOG.append({
+        "sequence": sequence,
+        "label": label,
+        "detail": detail,
+        "simulation_time": SCENARIO.simulation_time.isoformat().replace("+00:00", "Z"),
+        "mode": SCENARIO.mode,
+        "delta": delta,
+    })
+    del ACTION_LOG[:-ACTION_LOG_LIMIT]
+
+
+def _public_state() -> dict[str, Any]:
+    """Live state for the UI: the restorable snapshot plus the action log."""
+    return {**_snapshot_state(), "actions": list(reversed(ACTION_LOG))}
+
+
 def _event_location(event_id: int) -> dict[str, Any]:
     """Structural data of an active event: depth, height, balance, access cost."""
     node, visited = REPORT_PROCESSOR.locate(event_id)
@@ -578,8 +638,8 @@ def health() -> dict[str, str]:
 
 @app.get("/api/state")
 def state() -> dict[str, Any]:
-    """Return the current live state from memory. Explicit /api/load rehydrates from disk."""
-    return _snapshot_state()
+    """Return the current live state from memory, with the action log."""
+    return _public_state()
 
 
 @app.get("/api/events")
@@ -607,29 +667,53 @@ def set_scenario_mode(payload: dict[str, Any]) -> dict[str, Any]:
     mode = payload.get("mode")
     if mode is None:
         raise ValueError("mode is required")
-    _record_undo("change execution mode")
+    snapshot = _capture_undo("change execution mode")
+    before = _counter_totals()
+    was_stress = SCENARIO.stress_mode
     SCENARIO.set_mode(str(mode))
-    REPORT_PROCESSOR.set_stress_mode(SCENARIO.stress_mode)
-    return _snapshot_state()
+    UNDO_STACK.push(snapshot)
+    detail = f"mode {SCENARIO.mode}"
+    if was_stress and not SCENARIO.stress_mode:
+        # Leaving stress mode runs the global recovery; report its cost.
+        recovery = REPORT_PROCESSOR.recover_balance()
+        REPORT_PROCESSOR.set_stress_mode(False, recover=False)
+        detail += (
+            f"; global recovery applied {len(recovery['applied_cases'])} case(s) to "
+            f"{len(recovery['unbalanced_before'])} unbalanced node(s)"
+        )
+    else:
+        REPORT_PROCESSOR.set_stress_mode(SCENARIO.stress_mode, recover=False)
+    _log_action("change execution mode", before, detail)
+    return _public_state()
 
 
 @app.post("/api/scenario/parameters")
 def set_scenario_parameters(payload: dict[str, Any]) -> dict[str, Any]:
     """Update W/R/L/T and return the recalculated live state."""
-    _record_undo("change scenario parameters")
+    snapshot = _capture_undo("change scenario parameters")
+    before = _counter_totals()
+    previous = SCENARIO.parameters
     SCENARIO.set_parameters(
         W=payload.get("W"),
         R=payload.get("R"),
         L=payload.get("L"),
         T=payload.get("T"),
     )
-    return _snapshot_state()
+    UNDO_STACK.push(snapshot)
+    changed = [
+        f"{name} {previous[name]:g} -> {value:g}"
+        for name, value in SCENARIO.parameters.items()
+        if value != previous[name]
+    ]
+    _log_action("change scenario parameters", before, ", ".join(changed) or "no change")
+    return _public_state()
 
 
 @app.post("/api/scenario/recover")
 def recover_scenario_balance() -> dict[str, Any]:
     """Recover the global AVL balance after a stress burst."""
     _record_undo("recover AVL balance")
+    before = _counter_totals()
     metrics = REPORT_PROCESSOR.recover_balance()
     audit = REPORT_PROCESSOR.audit_report()
     if not audit["balanced"]:
@@ -638,12 +722,18 @@ def recover_scenario_balance() -> dict[str, Any]:
     if SCENARIO.stress_mode:
         SCENARIO.set_mode("normal")
     REPORT_PROCESSOR.set_stress_mode(False, recover=False)
+    _log_action(
+        "global AVL recovery",
+        before,
+        f"{len(metrics['unbalanced_before'])} unbalanced node(s), "
+        f"{len(metrics['applied_cases'])} case(s) applied; audit passed",
+    )
     return {
         "recovered": True,
         "mode": SCENARIO.mode,
         "metrics": metrics,
         "audit": audit,
-        "state": _snapshot_state(),
+        "state": _public_state(),
     }
 
 
@@ -651,8 +741,13 @@ def recover_scenario_balance() -> dict[str, Any]:
 def advance_scenario_clock(payload: dict[str, Any]) -> dict[str, Any]:
     """Advance the simulation clock by a non-negative integer amount."""
     amount = payload.get("amount", 1)
-    _record_undo("advance simulation clock")
-    SCENARIO.advance_clock(int(amount))
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
+        raise ValueError("amount must be a non-negative integer")
+    snapshot = _capture_undo("advance simulation clock")
+    before = _counter_totals()
+    SCENARIO.advance_clock(amount)
+    UNDO_STACK.push(snapshot)
+    _log_action("advance simulation clock", before, f"+{amount} h -> {_scenario_payload()['simulation_time']}")
     return _scenario_payload()
 
 
@@ -676,7 +771,15 @@ def process_queue() -> dict[str, Any]:
         }
 
     _record_undo("process one queued report")
+    before = _counter_totals()
     result = REPORT_PROCESSOR.process_next(REPORT_QUEUE)
+    rotations = ", ".join(f"{item['case']} at {item['node_id']}" for item in result.rotations)
+    _log_action(
+        "process queued report",
+        before,
+        f"{result.report.station} -> event {result.report.event_id} rev {result.report.revision}: "
+        f"{result.decision}" + (f"; rotations {rotations}" if rotations else ""),
+    )
     serialized = {
         "decision": result.decision,
         "message": result.message,
@@ -720,8 +823,14 @@ def enqueue_report(payload: dict[str, Any]) -> dict[str, Any]:
     )
     if report.occurred_at > SCENARIO.simulation_time:
         raise ValueError("report occurrence cannot be after simulation time")
+    _require_station(report.station)
     _record_undo("enqueue report")
+    before = _counter_totals()
     REPORT_QUEUE.enqueue(report)
+    _log_action(
+        "enqueue report", before,
+        f"{report.station} -> event {report.event_id} rev {report.revision} (position {len(REPORT_QUEUE)})",
+    )
     report_payload = report.to_dict()
     report_payload["event_id"] = report_payload["id"]
     return {"queued": True, "report": report_payload}
@@ -734,7 +843,9 @@ def archive_event(payload: dict[str, Any]) -> dict[str, Any]:
     if event_id not in REPORT_PROCESSOR.active_events:
         raise KeyError(f"event {event_id} is not active")
     _record_undo("archive event")
+    before = _counter_totals()
     event = REPORT_PROCESSOR.archive(event_id)
+    _log_action("archive single event", before, f"event {event_id}")
     return {
         "archived": True,
         "event_id": event_id,
@@ -769,17 +880,22 @@ def archive_branch_preview() -> dict[str, Any]:
 def archive_branch() -> dict[str, Any]:
     """Archive the largest eligible low-priority old subtree as one undoable action."""
     snapshot = _capture_undo("archive eligible branch")
+    before = _counter_totals()
     result = REPORT_PROCESSOR.archive_branch(
         clock=SCENARIO.simulation_time,
         age_hours=SCENARIO.archive_age_hours,
     )
     if result["archived"]:
         UNDO_STACK.push(snapshot)
+        _log_action(
+            "archive eligible branch", before,
+            f"root {result['root_id']}: {', '.join(str(event.event_id) for event in result['archived'])}",
+        )
     return {
         **_archive_plan_payload(result),
         "archived": bool(result["archived"]),
         "rotations": result["rotations"],
-        "state": _snapshot_state(),
+        "state": _public_state(),
     }
 
 
@@ -813,10 +929,13 @@ def create_event(payload: dict[str, Any]) -> dict[str, Any]:
         station=str(payload.get("station", "")),
         revision=1,
     )
+    _require_station(report.station)
     snapshot = _capture_undo("create event")
+    before = _counter_totals()
     event = REPORT_PROCESSOR.create(report)
     UNDO_STACK.push(snapshot)
-    return {"created": True, "event": event.to_dict(), "state": _snapshot_state()}
+    _log_action("create event", before, f"event {event.event_id} key {event.key}")
+    return {"created": True, "event": event.to_dict(), "state": _public_state()}
 
 
 @app.get("/api/events/{event_id}")
@@ -863,35 +982,45 @@ def correct_event(event_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         changes["occurred_at"] = occurred_at
 
     snapshot = _capture_undo("correct event")
+    before = _counter_totals()
+    previous = REPORT_PROCESSOR.active_events.get(event_id)
     try:
         event = REPORT_PROCESSOR.correct(event_id, changes)
     except (KeyError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     UNDO_STACK.push(snapshot)
-    return {"corrected": True, "event": event.to_dict(), "state": _snapshot_state()}
+    _log_action(
+        "correct event", before,
+        f"event {event_id} rev {event.revision}: key {previous.key} -> {event.key}",
+    )
+    return {"corrected": True, "event": event.to_dict(), "state": _public_state()}
 
 
 @app.post("/api/events/{event_id}/delete")
 def delete_event(event_id: int) -> dict[str, Any]:
     """Delete an active event and expose the updated live state."""
     snapshot = _capture_undo("delete event")
+    before = _counter_totals()
     try:
         event = REPORT_PROCESSOR.delete(event_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     UNDO_STACK.push(snapshot)
-    return {"deleted": True, "event_id": event.event_id, "state": _snapshot_state()}
+    _log_action("delete event", before, f"event {event_id} retired")
+    return {"deleted": True, "event_id": event.event_id, "state": _public_state()}
 
 
 @app.post("/api/events/{event_id}/review")
 def review_event(event_id: int) -> dict[str, Any]:
     snapshot = _capture_undo("mark event reviewed")
+    before = _counter_totals()
     try:
         event = REPORT_PROCESSOR.mark_reviewed(event_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     UNDO_STACK.push(snapshot)
-    return {"reviewed": True, "event": event.to_dict(), "state": _snapshot_state()}
+    _log_action("mark event reviewed", before, f"event {event_id}; key unchanged")
+    return {"reviewed": True, "event": event.to_dict(), "state": _public_state()}
 
 
 @app.get("/api/audit")
@@ -906,7 +1035,9 @@ def recover_event(payload: dict[str, Any]) -> dict[str, Any]:
     if event_id not in REPORT_PROCESSOR.archived_events:
         raise KeyError(f"event {event_id} is not archived")
     _record_undo("recover archived event")
+    before = _counter_totals()
     event = REPORT_PROCESSOR.recover(event_id)
+    _log_action("recover archived event", before, f"event {event_id}")
     return {
         "recovered": True,
         "event_id": event_id,
@@ -920,9 +1051,11 @@ def undo() -> dict[str, Any]:
     """Restore the complete state captured before the latest action."""
     if len(UNDO_STACK) == 0:
         raise HTTPException(status_code=409, detail="no actions to undo")
+    before = _counter_totals()
     snapshot = UNDO_STACK.pop()
     _hydrate_from_snapshot(snapshot.state)
-    return {"undone": True, "label": snapshot.label, "state": _snapshot_state()}
+    _log_action("undo", before, f"reverted: {snapshot.label}")
+    return {"undone": True, "label": snapshot.label, "state": _public_state()}
 
 
 @app.post("/api/versions/{name}")
@@ -935,6 +1068,7 @@ def save_version(name: str) -> dict[str, Any]:
     VERSIONS[normalized] = state
     VERSION_DIR.mkdir(parents=True, exist_ok=True)
     PersistenceService().export(VERSION_DIR / f"{normalized}.json", state)
+    _log_action("save version", _counter_totals(), f"version {normalized}")
     return {"saved": True, "name": normalized}
 
 
@@ -957,9 +1091,12 @@ def restore_version(name: str) -> dict[str, Any]:
         if not version_path.exists():
             raise HTTPException(status_code=404, detail="version not found")
         VERSIONS[name] = PersistenceService().load(version_path)
-    _record_undo("restore version")
+    snapshot = _capture_undo("restore version")
+    before = _counter_totals()
     _hydrate_from_snapshot(deepcopy(VERSIONS[name]))
-    return {"restored": True, "name": name, "state": _snapshot_state()}
+    UNDO_STACK.push(snapshot)
+    _log_action("restore version", before, f"version {name}")
+    return {"restored": True, "name": name, "state": _public_state()}
 
 
 @app.get("/api/compare")
@@ -1033,11 +1170,18 @@ def depth_and_dates(max_depth: float, start: str, end: str) -> dict[str, Any]:
 
 @app.post("/api/persist")
 def persist(payload: dict[str, Any]) -> dict[str, Any]:
-    """Persist the supplied state to disk."""
-    path = payload.get("path", str(DEFAULT_STATE_PATH))
-    state = payload.get("state", _snapshot_state())
+    """Export the live scenario to a path chosen by the user.
+
+    The browser normally downloads the export instead (no server path at all).
+    """
+    path = _require_path(payload)
+    state = payload.get("state", {})
     if not isinstance(state, dict):
         raise ValueError("state must be a JSON object")
+    # Operational data always comes from the live state; extra client fields
+    # (such as a status note) are kept.
+    live = _snapshot_state()
+    state = {**state, **{key: value for key, value in live.items() if key not in ("status", "message")}}
     state.setdefault("mode", SCENARIO.mode)
     state.setdefault("clock", SCENARIO.clock)
     state["events"] = _serialize_events()
@@ -1066,19 +1210,26 @@ def load_json_document(payload: dict[str, Any]) -> dict[str, Any]:
     document = payload.get("document")
     if not isinstance(document, dict):
         raise ValueError("document must be a JSON object")
-    _record_undo("load JSON document")
-    _hydrate_from_snapshot(document, load_mode=str(payload.get("mode", "topology")))
-    return {"loaded": True, "state": _snapshot_state()}
+    load_mode = str(payload.get("mode", "topology"))
+    snapshot = _capture_undo("load JSON document")
+    before = _counter_totals()
+    _hydrate_from_snapshot(document, load_mode=load_mode)
+    UNDO_STACK.push(snapshot)
+    _log_action("load JSON", before, f"{load_mode} load, {len(REPORT_PROCESSOR.active_events)} active events")
+    return {"loaded": True, "state": _public_state()}
 
 
 @app.post("/api/load")
 def load_state(payload: dict[str, Any]) -> dict[str, Any]:
-    """Load a previously persisted scenario state from disk."""
-    path = payload.get("path", str(DEFAULT_STATE_PATH))
+    """Load a scenario from a path chosen by the user."""
+    path = _require_path(payload)
     persistence = PersistenceService()
     state = persistence.load(path)
-    _record_undo("load saved JSON")
+    snapshot = _capture_undo("load saved JSON")
+    before = _counter_totals()
     _hydrate_from_snapshot(state, load_mode=str(payload.get("mode", "topology")))
+    UNDO_STACK.push(snapshot)
+    _log_action("load JSON from path", before, str(path))
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     state["mode"] = SCENARIO.mode
     state["clock"] = SCENARIO.clock
