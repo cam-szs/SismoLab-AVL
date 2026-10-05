@@ -1,5 +1,6 @@
 """HTTP boundary for the React client and persisted scenario state."""
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from domain.queue_fifo import ReportQueue
 from domain.report import Report
 from domain.scenario import Scenario
 from services.association_service import AssociationService
+from services.comparison_service import compare_orders
 from services.persistence_service import PersistenceService
 from services.report_processor import ReportProcessor
 from domain.undo_stack import Snapshot, UndoStack
@@ -95,16 +97,35 @@ def _serialize_history() -> dict[str, Any]:
 def _metrics_payload() -> dict[str, Any]:
     queue_count = len(REPORT_QUEUE)
     tree_metrics = REPORT_PROCESSOR.tree_metrics()
+    active = REPORT_PROCESSOR.active_events.values()
     return {
         "active": len(REPORT_PROCESSOR.active_events),
         "archived": len(REPORT_PROCESSOR.archived_events),
+        "deleted": len(REPORT_PROCESSOR.deleted_ids),
         "pending": queue_count,
+        "pending_attention": sum(1 for event in active if event.status.value == "pending"),
+        "by_priority": {
+            str(priority): sum(1 for event in active if event.priority == priority)
+            for priority in (1, 2, 3)
+        },
         "expensive_access": len(
             REPORT_PROCESSOR.query_expensive_access(SCENARIO.access_depth_limit)
         ),
         "avl": tree_metrics,
         "bst": REPORT_PROCESSOR.bst_metrics(),
         "processing": REPORT_PROCESSOR.stats.copy(),
+        "indicators": REPORT_PROCESSOR.indicators(),
+    }
+
+
+def _traversals_payload() -> dict[str, list[int]]:
+    """AVL traversals as event-id sequences (section 14 indicators)."""
+    tree = REPORT_PROCESSOR.tree
+    return {
+        "inorder": [node.event_id for node in tree.inorder()],
+        "preorder": [node.event_id for node in tree.preorder()],
+        "postorder": [node.event_id for node in tree.postorder()],
+        "level_order": [node.event_id for node in tree.level_order()],
     }
 
 
@@ -181,19 +202,108 @@ def _snapshot_state() -> dict[str, Any]:
         },
         "avl": REPORT_PROCESSOR.tree.export_to_dict(),
         "bst": REPORT_PROCESSOR.bst_export(),
+        "counters": REPORT_PROCESSOR.counters(),
+        "traversals": _traversals_payload(),
         "scenario": _scenario_payload(),
         "associations": _association_payload()["associations"],
         "association_count": _association_payload()["count"],
     }
 
 
+def _insertion_event(data: dict[str, Any], scenario: Scenario) -> Event:
+    """Parse one event of an insertion-mode file.
+
+    Only physical data is required; revision defaults to 1, the populated
+    flag is derived from the zones and an optional stored priority must
+    match the computed one.
+    """
+    occurred_raw = data.get("occurred_at")
+    if occurred_raw in (None, ""):
+        raise ValueError(f"event {data.get('id', data.get('event_id'))}: occurred_at is required")
+    epicenter = data.get("epicenter", {})
+    x_km = epicenter.get("x", data.get("x_km")) if isinstance(epicenter, dict) else None
+    y_km = epicenter.get("y", data.get("y_km")) if isinstance(epicenter, dict) else None
+    event_id = data.get("id", data.get("event_id"))
+    if isinstance(event_id, bool) or not isinstance(event_id, int):
+        raise ValueError("event id must be an integer")
+    stations = data.get("stations") or [data.get("station", "LOAD")]
+    report = Report.create(
+        event_id=event_id,
+        magnitude=_number(data, "magnitude"),
+        depth_km=_number(data, "depth_km"),
+        x_km=_number({"x": x_km}, "x"),
+        y_km=_number({"y": y_km}, "y"),
+        occurred_at=_parse_utc(occurred_raw),
+        station=str(stations[0]),
+        revision=int(data.get("revision", 1)),
+    )
+    event = report.to_event(populated_zone=scenario.is_populated(report.x_km, report.y_km))
+    event = replace(event, stations=frozenset(str(item) for item in stations))
+    if "priority" in data and data["priority"] != event.priority:
+        raise ValueError(
+            f"event {event.event_id}: stored priority {data['priority']} "
+            f"does not match computed {event.priority}"
+        )
+    return event
+
+
+def _build_topology(payload: Any, events: dict[int, Event], label: str) -> tuple[Node | None, int]:
+    """Rebuild a stored tree exactly as saved (no reinsertion).
+
+    Every node must reference a known active event, appear once, carry the
+    event's current key and a correct stored height. Order and balance
+    factors were already checked by PersistenceService.validate_topology.
+    """
+    seen: set[int] = set()
+
+    def build(node_payload: Any) -> Node | None:
+        if node_payload is None:
+            return None
+        if not isinstance(node_payload, dict) or not isinstance(node_payload.get("key"), dict):
+            raise ValueError(f"{label}: invalid node")
+        key_payload = node_payload["key"]
+        event_id = int(key_payload["event_id"])
+        if event_id in seen:
+            raise ValueError(f"{label}: event {event_id} appears more than once")
+        seen.add(event_id)
+        if event_id not in events:
+            raise ValueError(f"{label}: references unknown active event {event_id}")
+        event = events[event_id]
+        stored_key = (int(key_payload["priority"]), int(key_payload["magnitude_tenths"]), event_id)
+        if stored_key != (event.key.priority, event.key.magnitude_tenths, event_id):
+            raise ValueError(f"{label}: stored key does not match event {event_id}")
+        node = Node(event.key, event)
+        node.left = build(node_payload.get("izquierdo"))
+        node.right = build(node_payload.get("derecho"))
+        node.update_height()
+        if node.height != int(node_payload.get("height", node.height)):
+            raise ValueError(f"{label}: invalid stored height for event {event_id}")
+        return node
+
+    root = build(payload)
+    if seen != set(events):
+        missing = sorted(set(events) - seen)
+        raise ValueError(f"{label}: must contain every active event exactly once (missing {missing})")
+    return root, len(seen)
+
+
 def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topology") -> None:
+    """Validate a whole scenario and replace the live one only if all checks pass."""
+    try:
+        _hydrate(payload, load_mode=load_mode)
+    except (KeyError, TypeError, AttributeError) as error:
+        raise ValueError(f"malformed scenario file: {error!r}") from error
+
+
+def _hydrate(payload: dict[str, Any], *, load_mode: str) -> None:
     if not isinstance(payload, dict):
         raise ValueError("state must be a JSON object")
     if load_mode not in {"topology", "insertions"}:
         raise ValueError("load mode must be 'topology' or 'insertions'")
     if load_mode == "topology":
         PersistenceService.validate_topology(payload.get("avl"))
+        if payload.get("bst") is not None:
+            PersistenceService.validate_topology(payload.get("bst"))
 
     global REPORT_QUEUE, REPORT_PROCESSOR
 
@@ -223,6 +333,9 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
     zones_payload = payload.get("zones", payload.get("scenario", {}).get("zones"))
     if zones_payload is not None:
         candidate_scenario.zones = Scenario.zones_from_payload(zones_payload)
+    stations_payload = payload.get("stations", payload.get("scenario", {}).get("stations"))
+    if stations_payload is not None:
+        candidate_scenario.stations = Scenario.stations_from_payload(stations_payload)
     candidate_scenario.set_mode(candidate_mode)
     candidate_scenario.set_parameters(
         W=parameters.get("W"),
@@ -252,11 +365,15 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
     for item in events_payload:
         if not isinstance(item, dict):
             raise ValueError("event entries must be objects")
-        event = _event_from_dict(item)
+        event = (
+            _insertion_event(item, candidate_scenario)
+            if load_mode == "insertions"
+            else _event_from_dict(item)
+        )
         if event.occurred_at > candidate_time:
-            raise ValueError("event occurrence cannot be after simulation time")
+            raise ValueError(f"event {event.event_id}: occurrence cannot be after simulation time")
         if event.event_id in active_events:
-            raise ValueError(f"duplicate active event {event.event_id}")
+            raise ValueError(f"duplicate event {event.event_id} in the file")
         active_events[event.event_id] = event
 
     archived_events: dict[int, Event] = {}
@@ -297,58 +414,38 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
                 f"does not match the zones ({expected})"
             )
 
+    # Insertion loads always balance (section 12); the scenario mode applies
+    # to the operations performed after the load.
     candidate_processor = ReportProcessor(
         active_events=active_events,
         archived_events=archived_events,
         deleted_ids=deleted_ids,
-        populated_zone=lambda report: candidate_scenario.is_populated(report.x_km, report.y_km),
-        stress_mode=candidate_scenario.stress_mode,
+        populated_zone=lambda item: candidate_scenario.is_populated(item.x_km, item.y_km),
+        stress_mode=candidate_scenario.stress_mode if load_mode == "topology" else False,
     )
-    topology = payload.get("avl") if load_mode == "topology" else None
-    if topology is not None:
-        topology_ids: set[int] = set()
-
-        def build(node_payload: dict[str, Any] | None) -> Node | None:
-            if node_payload is None:
-                return None
-            key_payload = node_payload["key"]
-            event_id = int(key_payload["event_id"])
-            if event_id in topology_ids:
-                raise ValueError(f"duplicate topology event {event_id}")
-            topology_ids.add(event_id)
-            if event_id not in active_events:
-                raise ValueError(f"topology references unknown event {event_id}")
-            event = active_events[event_id]
-            stored_key = (
-                int(key_payload["priority"]),
-                int(key_payload["magnitude_tenths"]),
-                event_id,
-            )
-            if stored_key != (
-                event.key.priority,
-                event.key.magnitude_tenths,
-                event.key.event_id,
-            ):
-                raise ValueError(f"stored key does not match event {event_id}")
-            node = Node(event.key, event)
-            node.left = build(node_payload.get("izquierdo"))
-            node.right = build(node_payload.get("derecho"))
-            node.update_height()
-            if node.height != int(node_payload.get("height", node.height)):
-                raise ValueError(f"invalid stored height for event {event_id}")
-            return node
-
-        candidate_processor.tree.root = build(topology)
-        if topology_ids != set(active_events):
-            raise ValueError("topology must contain every active event exactly once")
-        candidate_processor.tree.size = len(active_events)
+    candidate_processor.tree.stress_mode = candidate_scenario.stress_mode
+    if load_mode == "topology":
+        if payload.get("avl") is not None or active_events:
+            root, size = _build_topology(payload.get("avl"), active_events, "AVL topology")
+            candidate_processor.tree.root, candidate_processor.tree.size = root, size
+        if payload.get("bst") is not None:
+            root, size = _build_topology(payload.get("bst"), active_events, "BST topology")
+            candidate_processor.bst.root, candidate_processor.bst.size = root, size
+        if "counters" in payload:
+            candidate_processor.restore_counters(payload["counters"])
     audit = candidate_processor.audit_report()
-    if not candidate_scenario.stress_mode and not audit["balanced"]:
-        raise ValueError("normal snapshot must contain a balanced AVL")
+    if audit["metadata_errors"]:
+        raise ValueError("; ".join(audit["metadata_errors"]))
+    if not candidate_scenario.stress_mode and audit["unbalanced_events"]:
+        raise ValueError(
+            "an unbalanced topology can only be loaded in stress mode; unbalanced events: "
+            f"{audit['unbalanced_events']}"
+        )
 
     candidate_scenario.values["clock"] = candidate_clock
     candidate_scenario.values["simulation_time"] = candidate_time.isoformat().replace("+00:00", "Z")
     SCENARIO.zones = candidate_scenario.zones
+    SCENARIO.stations = candidate_scenario.stations
     SCENARIO.mode = candidate_scenario.mode
     SCENARIO.clock = candidate_scenario.clock
     SCENARIO.simulation_time = candidate_scenario.simulation_time
@@ -401,6 +498,7 @@ def _scenario_payload() -> dict[str, Any]:
         "parameters": SCENARIO.parameters,
         "values": SCENARIO.values.copy(),
         "zones": SCENARIO.zones_payload(),
+        "stations": SCENARIO.stations_payload(),
     }
 
 
@@ -533,10 +631,20 @@ def recover_scenario_balance() -> dict[str, Any]:
     """Recover the global AVL balance after a stress burst."""
     _record_undo("recover AVL balance")
     metrics = REPORT_PROCESSOR.recover_balance()
+    audit = REPORT_PROCESSOR.audit_report()
+    if not audit["balanced"]:
+        # Never reached in practice; normal mode is only entered after a clean audit.
+        raise ValueError(f"recovery did not pass the audit: {audit}")
     if SCENARIO.stress_mode:
         SCENARIO.set_mode("normal")
     REPORT_PROCESSOR.set_stress_mode(False, recover=False)
-    return {"recovered": True, "mode": SCENARIO.mode, "metrics": metrics, "state": _snapshot_state()}
+    return {
+        "recovered": True,
+        "mode": SCENARIO.mode,
+        "metrics": metrics,
+        "audit": audit,
+        "state": _snapshot_state(),
+    }
 
 
 @app.post("/api/scenario/clock")
@@ -575,6 +683,7 @@ def process_queue() -> dict[str, Any]:
         "report": result.report.to_dict(),
         "event": result.event.to_dict() if result.event is not None else None,
         "previous_event": result.previous_event.to_dict() if result.previous_event is not None else None,
+        "rotations": list(result.rotations),
     }
     return {
         "processed": True,
@@ -634,19 +743,42 @@ def archive_event(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _archive_plan_payload(plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "root_id": plan["root_id"],
+        "event_ids": [event.event_id for event in plan["events"]],
+        "count": len(plan["events"]),
+        "eligible_branches": plan["eligible_branches"],
+        "alternatives": plan["alternatives"],
+        "reason": plan["reason"],
+        "age_limit_hours": SCENARIO.archive_age_hours,
+    }
+
+
+@app.get("/api/archive/branch/preview")
+def archive_branch_preview() -> dict[str, Any]:
+    """Show which branch would be archived, and why, without changing anything."""
+    plan = REPORT_PROCESSOR.select_archive_branch(
+        clock=SCENARIO.simulation_time,
+        age_hours=SCENARIO.archive_age_hours,
+    )
+    return _archive_plan_payload(plan)
+
+
 @app.post("/api/archive/branch")
 def archive_branch() -> dict[str, Any]:
-    """Archive the largest eligible low-priority old subtree."""
-    _record_undo("archive eligible branch")
+    """Archive the largest eligible low-priority old subtree as one undoable action."""
+    snapshot = _capture_undo("archive eligible branch")
     result = REPORT_PROCESSOR.archive_branch(
         clock=SCENARIO.simulation_time,
         age_hours=SCENARIO.archive_age_hours,
     )
+    if result["archived"]:
+        UNDO_STACK.push(snapshot)
     return {
+        **_archive_plan_payload(result),
         "archived": bool(result["archived"]),
-        "root_id": result["root_id"],
-        "event_ids": [event.event_id for event in result["archived"]],
-        "reason": result["reason"],
+        "rotations": result["rotations"],
         "state": _snapshot_state(),
     }
 
@@ -828,6 +960,17 @@ def restore_version(name: str) -> dict[str, Any]:
     _record_undo("restore version")
     _hydrate_from_snapshot(deepcopy(VERSIONS[name]))
     return {"restored": True, "name": name, "state": _snapshot_state()}
+
+
+@app.get("/api/compare")
+def compare_avl_bst() -> dict[str, Any]:
+    """Compare AVL and BST for the active events under several insertion orders.
+
+    The live trees are not touched: fresh trees are built for each order.
+    "given" uses the order in which the events entered the catalog.
+    """
+    events = list(REPORT_PROCESSOR.active_events.values())
+    return {"size": len(events), "orders": compare_orders(events)}
 
 
 @app.get("/api/queries/expensive")

@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Optional, Set
 from collections import deque
 from datetime import datetime, timezone
 
-from domain.avl import AVLTree
+from domain.avl import ROTATION_COUNTER_KEYS, AVLTree, elementary_rotations
 from domain.bst import BSTree
 from domain.event import Event
 from domain.event_key import EventKey
@@ -59,6 +59,15 @@ class ProcessResult:
     event: Optional[Event] = None
     previous_event: Optional[Event] = None
     message: str = ""
+    rotations: tuple = ()   # AVL balancing cases applied while resolving the report
+
+
+# Counters that are part of the restorable state (section 14).
+STAT_KEYS = (
+    "created", "corrections", "confirmations", "conflicts", "stale",
+    "rejected_deleted", "recoveries", "deletions", "archive_operations",
+    "archived_events",
+)
 
 
 class ReportProcessor:
@@ -81,14 +90,40 @@ class ReportProcessor:
         for event in self.active_events.values():
             self.tree.insert(event.key, event)
             self.bst.insert(event.key, event)
-        self.stats = {
-            "created": 0,
-            "corrections": 0,
-            "confirmations": 0,
-            "conflicts": 0,
-            "stale": 0,
-            "rejected_deleted": 0,
-            "recoveries": 0,
+        self.stats = dict.fromkeys(STAT_KEYS, 0)
+
+    # ---------- restorable counters ----------
+
+    def counters(self) -> dict[str, dict[str, int]]:
+        """Counters saved with snapshots, versions and exported JSON."""
+        return {"stats": dict(self.stats), "rotations": dict(self.tree.rotations_count)}
+
+    def restore_counters(self, payload: Any) -> None:
+        """Validate and restore counters from a snapshot (all or nothing)."""
+        if not isinstance(payload, dict):
+            raise ValueError("counters must be an object")
+        restored: dict[str, dict[str, int]] = {}
+        for group, keys in (("stats", STAT_KEYS), ("rotations", ROTATION_COUNTER_KEYS)):
+            values = payload.get(group, {})
+            if not isinstance(values, dict):
+                raise ValueError(f"counters.{group} must be an object")
+            restored[group] = {}
+            for name in keys:
+                value = values.get(name, 0)
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise ValueError(f"counter {group}.{name} must be a non-negative integer")
+                restored[group][name] = value
+        self.stats = restored["stats"]
+        self.tree.rotations_count = restored["rotations"]
+
+    def indicators(self) -> dict[str, int]:
+        """Section 14 indicators derived from the counters."""
+        return {
+            "accepted_corrections": self.stats["corrections"],
+            "discarded_reports": self.stats["stale"] + self.stats["rejected_deleted"],
+            "conflicts": self.stats["conflicts"],
+            "archive_operations": self.stats["archive_operations"],
+            "archived_events": self.stats["archived_events"],
         }
 
     def set_stress_mode(self, enabled: bool, *, recover: bool = True) -> dict[str, object]:
@@ -100,10 +135,20 @@ class ReportProcessor:
         return self.tree_metrics()
 
     def recover_balance(self) -> dict[str, object]:
-        """Restore the AVL invariant after a stress burst."""
-        self.tree.recover_balance()
+        """Restore the AVL invariant after a stress burst.
+
+        Returns the tree metrics plus the cost of the recovery: the cases
+        applied (node, balance, new subtree root) and the rotation counts.
+        """
+        unbalanced_before = self.audit_report()["unbalanced_events"]
+        report = self.tree.recover_balance()
         self.stats["recoveries"] += 1
-        return self.tree_metrics()
+        return {
+            **self.tree_metrics(),
+            "unbalanced_before": unbalanced_before,
+            "applied_cases": report["applied_cases"],
+            "rotation_delta": report["rotation_delta"],
+        }
 
     def tree_metrics(self) -> dict[str, object]:
         """Return structural AVL metrics without hiding stress-mode imbalance."""
@@ -128,7 +173,7 @@ class ReportProcessor:
             "leaves": self.tree.count_leaves(),
             "balanced": balanced,
             "stress_mode": self.tree.stress_mode,
-            "rotations": sum(self.tree.rotations_count.values()),
+            "rotations": elementary_rotations(self.tree.rotations_count),
             "rotation_counts": self.tree.rotations_count.copy(),
             "depths": depths,
         }
@@ -176,8 +221,15 @@ class ReportProcessor:
         self.active_events[updated.event_id] = updated
 
     def process_next(self, queue: ReportQueue[Report]) -> ProcessResult:
-        """Consume and resolve exactly one report from ``queue``."""
-        report = queue.dequeue()
+        """Consume and resolve exactly one report from ``queue``.
+
+        The result carries the AVL balancing cases the step produced.
+        """
+        log_start = len(self.tree.rotation_log)
+        result = self._resolve(queue.dequeue())
+        return replace(result, rotations=tuple(self.tree.rotation_log[log_start:]))
+
+    def _resolve(self, report: Report) -> ProcessResult:
 
         if report.event_id in self.deleted_ids:
             self.stats["rejected_deleted"] += 1
@@ -212,51 +264,89 @@ class ReportProcessor:
         self.tree.remove(event.key)
         self.bst.delete(event.key)
         self.archived_events[event_id] = event
+        self.stats["archived_events"] += 1
         return event
 
-    def archive_branch(
-        self,
-        *,
-        clock: datetime,
-        age_hours: float,
-    ) -> dict[str, object]:
-        """Archive the largest eligible subtree from the current topology."""
-        if self.tree.root is None:
-            return {"archived": [], "root_id": None, "reason": "empty tree"}
+    def select_archive_branch(self, *, clock: datetime, age_hours: float) -> dict[str, object]:
+        """Choose the branch to archive without modifying anything (preview).
 
-        candidates: list[tuple[int, int, int, list[Event]]] = []
+        A subtree is eligible when all of its events have low priority and an
+        age strictly greater than T. One post-order pass decides eligibility
+        bottom-up in O(n). Among eligible branches the largest wins; ties go
+        to the deepest root and then to the largest root id. The returned
+        set is fixed from the topology at this moment.
+        """
+        candidates: list[dict[str, object]] = []
 
-        def visit(node, depth: int) -> tuple[bool, list[Event]]:
+        def visit(node: Optional[Node], depth: int) -> tuple[bool, list[Event]]:
             if node is None:
                 return True, []
             left_ok, left_events = visit(node.left, depth + 1)
             right_ok, right_events = visit(node.right, depth + 1)
             own = node.event
             age = (clock - own.occurred_at).total_seconds() / 3600
-            eligible = (
-                left_ok
-                and right_ok
-                and own.priority == 1
-                and age > age_hours
-            )
+            eligible = left_ok and right_ok and own.priority == 1 and age > age_hours
             events = left_events + [own] + right_events
             if eligible:
-                candidates.append((len(events), depth, own.event_id, list(events)))
+                candidates.append({
+                    "root_id": own.event_id,
+                    "size": len(events),
+                    "depth": depth,
+                    "events": events,
+                })
             return eligible, events
 
         visit(self.tree.root, 0)
         if not candidates:
-            return {"archived": [], "root_id": None, "reason": "no eligible branch"}
-        _, _, root_id, events = max(candidates, key=lambda item: (item[0], item[1], item[2]))
+            return {
+                "root_id": None,
+                "events": [],
+                "eligible_branches": 0,
+                "alternatives": [],
+                "reason": "no eligible branch: every subtree has a non-low priority "
+                          f"event or an event not older than {age_hours:g} h",
+            }
+        ranked = sorted(
+            candidates,
+            key=lambda item: (item["size"], item["depth"], item["root_id"]),
+            reverse=True,
+        )
+        chosen = ranked[0]
+        return {
+            "root_id": chosen["root_id"],
+            "events": chosen["events"],
+            "eligible_branches": len(candidates),
+            "alternatives": [
+                {key: item[key] for key in ("root_id", "size", "depth")} for item in ranked[:5]
+            ],
+            "reason": (
+                f"branch rooted at {chosen['root_id']} has {chosen['size']} node(s), all low "
+                f"priority and older than {age_hours:g} h; chosen among {len(candidates)} "
+                "eligible branch(es) by size, then deeper root, then larger root id"
+            ),
+        }
+
+    def archive_branch(self, *, clock: datetime, age_hours: float) -> dict[str, object]:
+        """Archive the branch chosen by `select_archive_branch` as one action.
+
+        The set is computed before the tree changes, so the rotations done by
+        each removal cannot add or drop events from it.
+        """
+        plan = self.select_archive_branch(clock=clock, age_hours=age_hours)
+        events: list[Event] = plan["events"]
+        log_start = len(self.tree.rotation_log)
         for event in events:
             self.active_events.pop(event.event_id, None)
             self.tree.remove(event.key)
             self.bst.delete(event.key)
             self.archived_events[event.event_id] = event
+        if events:
+            self.stats["archive_operations"] += 1
+            self.stats["archived_events"] += len(events)
         return {
+            **plan,
             "archived": events,
-            "root_id": root_id,
-            "reason": "largest eligible branch",
+            "rotations": self.tree.rotation_log[log_start:],
         }
 
     def recover(self, event_id: int) -> Event:
@@ -273,6 +363,7 @@ class ReportProcessor:
         self.tree.remove(event.key)
         self.bst.delete(event.key)
         self.deleted_ids.add(event_id)
+        self.stats["deletions"] += 1
         return event
 
     def is_registered(self, event_id: int) -> bool:
@@ -439,27 +530,78 @@ class ReportProcessor:
         return updated
 
     def audit_report(self) -> dict[str, object]:
-        """Return structural errors while distinguishing expected stress imbalance."""
-        errors: list[str] = []
-        nodes = self.tree.inorder()
-        keys = [node.key for node in nodes]
-        if keys != sorted(keys):
-            errors.append("in-order keys are not sorted")
-        if len(nodes) != self.tree.size:
-            errors.append("tree size does not match node count")
+        """Verify the active AVL and report one entry per inconsistent event.
+
+        Checks, in one O(n) post-order pass with inherited key bounds:
+        - global order: every key lies strictly between the bounds set by all
+          its ancestors (not only its parent);
+        - uniqueness: each id appears once and is not also archived/deleted;
+        - references: node key == key derived from the event, the event is
+          the one indexed by id, and every indexed event is in the tree;
+        - stored height == recomputed height (empty = -1, leaf = 0);
+        - balance factor in {-1, 0, 1}. In stress mode an imbalance is
+          reported as expected, separately from order or metadata errors.
+        """
+        issues: list[dict[str, object]] = []
         unbalanced: list[int] = []
-        for node in nodes:
-            expected = node.compute_height()
-            if node.height != expected:
-                errors.append(f"stale height for {node.event.event_id}")
-            if abs(node.balance_factor()) > 1:
-                unbalanced.append(node.event.event_id)
+        seen: set[int] = set()
+
+        def report(event_id: int, kind: str, detail: str) -> None:
+            issues.append({"event_id": event_id, "kind": kind, "detail": detail})
+
+        def visit(node: Optional[Node], lower: Optional[EventKey], upper: Optional[EventKey]) -> int:
+            if node is None:
+                return -1
+            event_id = node.key.event_id
+            if lower is not None and not node.key > lower:
+                report(event_id, "order", f"key {node.key} is not greater than ancestor bound {lower}")
+            if upper is not None and not node.key < upper:
+                report(event_id, "order", f"key {node.key} is not smaller than ancestor bound {upper}")
+            if event_id in seen:
+                report(event_id, "uniqueness", "identifier appears in more than one node")
+            seen.add(event_id)
+            event = node.event
+            if not isinstance(event, Event) or event.event_id != event_id:
+                report(event_id, "reference", "node does not reference the event with its id")
+            else:
+                if node.key != event.key:
+                    report(event_id, "reference", f"node key {node.key} differs from derived key {event.key}")
+                if self.active_events.get(event_id) is not event:
+                    report(event_id, "reference", "node event is not the one indexed as active")
+                if event_id in self.archived_events or event_id in self.deleted_ids:
+                    report(event_id, "uniqueness", "identifier is also archived or deleted")
+            left_height = visit(node.left, lower, node.key)
+            right_height = visit(node.right, node.key, upper)
+            height = 1 + max(left_height, right_height)
+            if node.height != height:
+                report(event_id, "height", f"stored height {node.height}, recomputed {height}")
+            balance = left_height - right_height
+            if abs(balance) > 1:
+                unbalanced.append(event_id)
+                report(
+                    event_id,
+                    "balance_expected" if self.tree.stress_mode else "balance",
+                    f"balance factor {balance}",
+                )
+            return height
+
+        visit(self.tree.root, None, None)
+        for event_id in sorted(set(self.active_events) - seen):
+            report(event_id, "reference", "active event is missing from the AVL")
+        if len(seen) != self.tree.size:
+            report(0, "metadata", f"stored size {self.tree.size}, counted {len(seen)} nodes")
+
+        structural = [item for item in issues if not item["kind"].startswith("balance")]
         return {
-            "valid_order": not any("keys" in error for error in errors),
-            "metadata_errors": errors,
+            "valid_order": not any(item["kind"] == "order" for item in issues),
+            "metadata_errors": [
+                f"event {item['event_id']}: {item['kind']}: {item['detail']}" for item in structural
+            ],
+            "issues": issues,
             "unbalanced_events": unbalanced,
             "expected_unbalance": self.tree.stress_mode,
-            "balanced": not unbalanced and not errors,
+            "nodes_checked": len(seen),
+            "balanced": not unbalanced and not structural,
         }
 
     def _process_against_active(self, report: Report, current: Event) -> ProcessResult:

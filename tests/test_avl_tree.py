@@ -49,10 +49,7 @@ def test_stress_mode_defers_rotations_and_recovers() -> None:
     assert tree.stress_mode is True
     assert tree.is_balanced() is False
     assert tree.rotations_count == {
-        "single_left": 0,
-        "single_right": 0,
-        "double_left": 0,
-        "double_right": 0,
+        "LL": 0, "RR": 0, "LR": 0, "RL": 0, "rotate_left": 0, "rotate_right": 0,
     }
 
     metrics = tree.recover_balance()

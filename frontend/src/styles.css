@@ -1071,3 +1071,137 @@ h2 {
   min-width: 0;
   box-sizing: border-box;
 }
+
+/* ---------- queue auto processing ---------- */
+
+.auto-process {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  margin-top: 12px;
+}
+.auto-process label {
+  display: grid;
+  gap: 6px;
+  font: 500 10px "DM Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #648073;
+}
+.auto-process input {
+  width: 110px;
+  border: 1px solid #c5d1c8;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+/* ---------- audit issues ---------- */
+
+.audit-issues {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.audit-issues li {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #f6e2dc;
+  font: 12px "DM Mono", monospace;
+}
+.audit-issues li.issue-balance_expected {
+  background: #f6ecd3;
+}
+
+/* ---------- indicators and traversals ---------- */
+
+.indicator-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 22px;
+  margin-top: 18px;
+}
+.indicator-groups dl,
+.traversals {
+  margin: 0;
+}
+.indicator-groups div,
+.traversals div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.indicator-groups dt,
+.traversals dt {
+  color: var(--muted);
+}
+.indicator-groups dd,
+.traversals dd {
+  margin: 0;
+  font-family: "DM Mono", monospace;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.indicator-groups .indicator-title {
+  margin-bottom: 4px;
+  font: 500 11px "DM Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.traversals {
+  margin-top: 14px;
+}
+
+/* ---------- comparison table ---------- */
+
+.comparison-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px "DM Mono", monospace;
+}
+.comparison-table th,
+.comparison-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+  white-space: nowrap;
+}
+.comparison-table tbody th {
+  text-align: left;
+  font-weight: 500;
+}
+.comparison-table thead th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+@media (max-width: 800px) {
+  .indicator-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Wide trees (e.g. a degenerate BST) scroll inside their panel instead of
+   stretching the page grid. */
+.ops-grid > *,
+.tree-compare > *,
+.tools-grid > * {
+  min-width: 0;
+}
+.tree-panel {
+  overflow-x: auto;
+}

@@ -13,6 +13,18 @@ Value = TypeVar("Value")
 # Backwards-compatible alias used by the project skeleton.
 AVLNode = Node
 
+# LL/RR/LR/RL count balancing cases; rotate_left/rotate_right count the
+# elementary rotations (a double case adds one case and two rotations).
+ROTATION_COUNTER_KEYS = ("LL", "RR", "LR", "RL", "rotate_left", "rotate_right")
+
+
+def new_rotation_counters() -> dict[str, int]:
+    return dict.fromkeys(ROTATION_COUNTER_KEYS, 0)
+
+
+def elementary_rotations(counts: dict[str, int]) -> int:
+    return counts["rotate_left"] + counts["rotate_right"]
+
 
 class AVLTree(BSTree, Generic[Key, Value]):
     """Balance a BST, with an optional deferred-balancing stress mode.
@@ -25,15 +37,17 @@ class AVLTree(BSTree, Generic[Key, Value]):
     def __init__(self, *, stress_mode: bool = False) -> None:
         super().__init__()
         self.stress_mode = stress_mode
-        self.rotations_count = {
-            "single_left": 0,
-            "single_right": 0,
-            "double_left": 0,
-            "double_right": 0,
-        }
+        self.rotations_count = new_rotation_counters()
+        # One entry per balancing case handled, so callers can show which
+        # rotations an operation produced (compare the length before/after).
+        self.rotation_log: list[dict[str, object]] = []
 
     def _rotate_left(self, node: Node) -> Node:
-        """Rotate the subtree rooted at `node` to the left."""
+        """Elementary left rotation of the subtree rooted at `node`.
+
+        Only links and heights change; keys and events stay in their nodes,
+        so the in-order sequence (the BST order) is preserved.
+        """
         pivot = node.right
         if pivot is None:
             return node
@@ -42,11 +56,11 @@ class AVLTree(BSTree, Generic[Key, Value]):
         pivot.left = node
         node.update_height()
         pivot.update_height()
-        self.rotations_count["single_left"] += 1
+        self.rotations_count["rotate_left"] += 1
         return pivot
 
     def _rotate_right(self, node: Node) -> Node:
-        """Rotate the subtree rooted at `node` to the right."""
+        """Elementary right rotation of the subtree rooted at `node`."""
         pivot = node.left
         if pivot is None:
             return node
@@ -55,29 +69,47 @@ class AVLTree(BSTree, Generic[Key, Value]):
         pivot.right = node
         node.update_height()
         pivot.update_height()
-        self.rotations_count["single_right"] += 1
+        self.rotations_count["rotate_right"] += 1
         return pivot
+
+    def _fix_balance(self, node: Node) -> Node:
+        """Apply the AVL case for an unbalanced node and return the new root.
+
+        LL and RR use one elementary rotation; LR and RL count as one case
+        and two elementary rotations, as the assignment requires.
+        """
+        balance = node.balance_factor()
+        if balance > 1:
+            if node.left is not None and node.left.balance_factor() < 0:
+                case = "LR"
+                node.left = self._rotate_left(node.left)
+            else:
+                case = "LL"
+            new_root = self._rotate_right(node)
+        elif balance < -1:
+            if node.right is not None and node.right.balance_factor() > 0:
+                case = "RL"
+                node.right = self._rotate_right(node.right)
+            else:
+                case = "RR"
+            new_root = self._rotate_left(node)
+        else:
+            return node
+        self.rotations_count[case] += 1
+        self.rotation_log.append({
+            "case": case,
+            "node_id": node.key.event_id,
+            "balance": balance,
+            "new_root_id": new_root.key.event_id,
+        })
+        return new_root
 
     def _rebalance(self, node: Node) -> Node:
         """Apply AVL rotations when the subtree becomes unbalanced."""
         node.update_height()
         if self.stress_mode:
             return node
-
-        balance = node.balance_factor()
-        if balance > 1:
-            if node.left is not None and node.left.balance_factor() < 0:
-                node.left = self._rotate_left(node.left)
-                self.rotations_count["double_right"] += 1
-            return self._rotate_right(node)
-
-        if balance < -1:
-            if node.right is not None and node.right.balance_factor() > 0:
-                node.right = self._rotate_right(node.right)
-                self.rotations_count["double_left"] += 1
-            return self._rotate_left(node)
-
-        return node
+        return self._fix_balance(node)
 
     def insert(self, key: Key, value: Value) -> None:
         """Insert a node and rebalance the AVL tree."""
@@ -100,36 +132,46 @@ class AVLTree(BSTree, Generic[Key, Value]):
         if recover:
             self.recover_balance()
 
-    def recover_balance(self) -> dict[str, int]:
-        """Recover balance using rotations on the existing tree.
+    def recover_balance(self) -> dict[str, object]:
+        """Recover the AVL property with rotations on the existing nodes.
 
-        The academic specification forbids replacing the tree with a new
-        balanced tree built from an ordered list. Repeated post-order
-        rotations preserve every existing node and its identity.
+        The specification forbids replacing the tree with one rebuilt from an
+        ordered list. `_recover_subtree` works bottom-up: both children are
+        made AVL first, then the root is rotated while it is unbalanced, and
+        the subtrees touched by the rotation are recovered again. Rotations
+        preserve the in-order sequence, so the BST order and every node
+        identity are kept. Each rotation at the root strictly reduces the
+        height difference between its children, and the recursion only
+        descends into smaller subtrees, so the procedure terminates even
+        with differences greater than 2. Returns the audit metrics plus the
+        cases and rotations it applied (its cost).
         """
         self.stress_mode = False
-        while self.root is not None and not self.is_balanced():
-            self.root = self._recover_subtree(self.root)
-        return self.audit()
+        log_start = len(self.rotation_log)
+        counts_before = dict(self.rotations_count)
+        self.root = self._recover_subtree(self.root)
+        metrics = self.audit()
+        metrics["applied_cases"] = self.rotation_log[log_start:]
+        metrics["rotation_delta"] = {
+            name: self.rotations_count[name] - counts_before[name]
+            for name in self.rotations_count
+        }
+        return metrics
 
-    def _recover_subtree(self, node: Node) -> Node:
-        """Rotate an unbalanced subtree after recovering both children."""
-        if node.left is not None:
-            node.left = self._recover_subtree(node.left)
-        if node.right is not None:
-            node.right = self._recover_subtree(node.right)
+    def _recover_subtree(self, node: Optional[Node]) -> Optional[Node]:
+        """Return an AVL subtree with the same nodes and in-order sequence."""
+        if node is None:
+            return None
+        node.left = self._recover_subtree(node.left)
+        node.right = self._recover_subtree(node.right)
         node.update_height()
-        balance = node.balance_factor()
-        if balance > 1:
-            if node.left is not None and node.left.balance_factor() < 0:
-                node.left = self._rotate_left(node.left)
-                self.rotations_count["double_right"] += 1
-            return self._rotate_right(node)
-        if balance < -1:
-            if node.right is not None and node.right.balance_factor() > 0:
-                node.right = self._rotate_right(node.right)
-                self.rotations_count["double_left"] += 1
-            return self._rotate_left(node)
+        while abs(node.balance_factor()) > 1:
+            node = self._fix_balance(node)
+            # The rotation may leave the demoted root unbalanced: repair the
+            # two children of the new root, then re-check the root itself.
+            node.left = self._recover_subtree(node.left)
+            node.right = self._recover_subtree(node.right)
+            node.update_height()
         return node
 
     def recover(self) -> dict[str, int]:
@@ -158,7 +200,7 @@ class AVLTree(BSTree, Generic[Key, Value]):
             "size": self.size,
             "height": self.get_height(),
             "leaves": self.count_leaves(),
-            "rotations": sum(self.rotations_count.values()),
+            "rotations": elementary_rotations(self.rotations_count),
         }
 
     def is_balanced(self) -> bool:

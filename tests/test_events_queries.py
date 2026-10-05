@@ -80,13 +80,14 @@ def test_priority_limits_with_zones(client: TestClient) -> None:
 
 
 def test_zones_are_saved_and_rejected_when_flags_do_not_match(client: TestClient) -> None:
-    create(client, 1, 4.5, 30.0, x=400.0, y=400.0)
+    # M = 3.0 is low priority anywhere, so only the stored zone flag is wrong.
+    create(client, 1, 3.0, 30.0, x=400.0, y=400.0)
     state = client.get("/api/state").json()
     assert {zone["name"] for zone in state["scenario"]["zones"]} == set(default_zones())
 
     tampered = dict(state)
-    tampered["events"] = [{**state["events"][0], "populated_zone": False, "priority": 2}]
-    response = client.post("/api/load-json", json={"document": tampered, "mode": "insertions"})
+    tampered["events"] = [{**state["events"][0], "populated_zone": False}]
+    response = client.post("/api/load-json", json={"document": tampered, "mode": "topology"})
     assert response.status_code == 400
     assert "populated_zone" in response.json()["error"]
 

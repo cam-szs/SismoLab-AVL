@@ -51,10 +51,12 @@ function MetricCards({ state, avlMetrics }) {
   const metrics = [
     ["Reloj", state?.clock ?? 0],
     ["Eventos activos", state?.metrics?.active ?? "--"],
+    ["Históricos", state?.metrics?.archived ?? "--"],
     ["En cola", state?.queue?.length ?? "--"],
-    ["Pendientes", state?.metrics?.pending ?? "--"],
+    ["Pendientes de atención", state?.metrics?.pending_attention ?? "--"],
     ["Altura AVL", avlMetrics.height ?? "--"],
-    ["Rotaciones", avlMetrics.rotations ?? "--"],
+    ["Hojas AVL", avlMetrics.leaves ?? "--"],
+    ["Acceso costoso", state?.metrics?.expensive_access ?? "--"],
     ["Balance", avlMetrics.balanced === false ? "Requiere recuperación" : "OK"],
   ];
 
@@ -122,8 +124,12 @@ function StateActions({
       <ActionButton label="Descargar JSON" onClick={downloadState} secondary />
       <ActionButton label="Cargar guardado" onClick={loadSavedState} secondary />
       <label className="action-button secondary file-action">
-        {action === "load-file" ? "Cargando..." : "Cargar archivo JSON"}
-        <input type="file" accept="application/json,.json" onChange={loadJsonFile} disabled={Boolean(action)} />
+        {action === "load-file" ? "Cargando..." : "Cargar topología JSON"}
+        <input type="file" accept="application/json,.json" onChange={(event) => loadJsonFile(event, "topology")} disabled={Boolean(action)} />
+      </label>
+      <label className="action-button secondary file-action">
+        {action === "load-file" ? "Cargando..." : "Cargar inserciones JSON"}
+        <input type="file" accept="application/json,.json" onChange={(event) => loadJsonFile(event, "insertions")} disabled={Boolean(action)} />
       </label>
       <ActionButton
         label="Deshacer"
@@ -206,7 +212,7 @@ function MapPanel({ zones, mapPoints, associations, openEvent }) {
   );
 }
 
-function QueuePanel({ form, handleInputChange, submitReport, processNextReport, queueItems, action }) {
+function QueuePanel({ form, handleInputChange, submitReport, processNextReport, queueItems, action, autoProcess, setAutoProcess, stepDelay, setStepDelay }) {
   return (
     <article className="workspace-card queue-card">
       <SectionHeader index="03" label="RECEPCIÓN" title="FIFO" />
@@ -249,9 +255,30 @@ function QueuePanel({ form, handleInputChange, submitReport, processNextReport, 
         <button className="submit-report" type="submit">Encolar reporte</button>
       </form>
 
-      <button className="process-report" type="button" onClick={processNextReport} disabled={Boolean(action)}>
+      <button className="process-report" type="button" onClick={processNextReport} disabled={Boolean(action) || autoProcess}>
         Procesar siguiente reporte
       </button>
+      <div className="auto-process">
+        <label>
+          <span>Pausa entre pasos (ms)</span>
+          <input
+            type="number"
+            min="200"
+            step="100"
+            value={stepDelay}
+            onChange={(event) => setStepDelay(Math.max(200, Number(event.target.value) || 200))}
+            disabled={autoProcess}
+          />
+        </label>
+        <button
+          type="button"
+          className={`action-button ${autoProcess ? "danger" : "secondary"}`}
+          onClick={() => setAutoProcess(!autoProcess)}
+          disabled={!autoProcess && queueItems.length === 0}
+        >
+          {autoProcess ? "Pausar" : "Procesamiento continuo"}
+        </button>
+      </div>
       <p className="form-help">
         La recepción primero encola el reporte. Al procesarlo se decide si es alta, confirmación, corrección,
         conflicto o reporte antiguo. Sin fecha se usa el reloj de simulación.
@@ -295,6 +322,145 @@ function ArchivePanel({ archivedEvents, recoverEvent, action }) {
   );
 }
 
+const AUDIT_KINDS = {
+  order: "Orden por K",
+  uniqueness: "Unicidad",
+  reference: "Referencia",
+  height: "Altura almacenada",
+  metadata: "Metadatos",
+  balance: "Desbalance",
+  balance_expected: "Desbalance esperado (estrés)",
+};
+
+function IndicatorsPanel({ state }) {
+  const counters = state?.counters ?? { stats: {}, rotations: {} };
+  const rotations = counters.rotations ?? {};
+  const indicators = state?.metrics?.indicators ?? {};
+  const byPriority = state?.metrics?.by_priority ?? {};
+  const traversals = state?.traversals ?? {};
+  const groups = [
+    ["Reportes", [
+      ["Correcciones aceptadas", indicators.accepted_corrections],
+      ["Reportes descartados", indicators.discarded_reports],
+      ["Conflictos", indicators.conflicts],
+      ["Altas", counters.stats?.created],
+      ["Confirmaciones", counters.stats?.confirmations],
+    ]],
+    ["Archivo y eliminación", [
+      ["Archivos masivos", indicators.archive_operations],
+      ["Eventos archivados", indicators.archived_events],
+      ["Eliminaciones", counters.stats?.deletions],
+      ["Recuperaciones globales", counters.stats?.recoveries],
+    ]],
+    ["Balanceo", [
+      ["Casos LL", rotations.LL],
+      ["Casos RR", rotations.RR],
+      ["Casos LR", rotations.LR],
+      ["Casos RL", rotations.RL],
+      ["Giros a la izquierda", rotations.rotate_left],
+      ["Giros a la derecha", rotations.rotate_right],
+    ]],
+    ["Catálogo", [
+      ["Prioridad alta", byPriority["3"]],
+      ["Prioridad media", byPriority["2"]],
+      ["Prioridad baja", byPriority["1"]],
+      ["Pendientes de atención", state?.metrics?.pending_attention],
+      ["Acceso costoso", state?.metrics?.expensive_access],
+    ]],
+  ];
+  const traversalRows = [
+    ["Inorden", traversals.inorder],
+    ["Preorden", traversals.preorder],
+    ["Postorden", traversals.postorder],
+    ["Por niveles", traversals.level_order],
+  ];
+
+  return (
+    <article className="workspace-card">
+      <SectionHeader index="11" label="INDICADORES" title="CONTADORES Y RECORRIDOS" />
+      <div className="indicator-groups">
+        {groups.map(([title, rows]) => (
+          <dl key={title}>
+            <dt className="indicator-title">{title}</dt>
+            {rows.map(([label, value]) => (
+              <div key={label}><dt>{label}</dt><dd>{value ?? 0}</dd></div>
+            ))}
+          </dl>
+        ))}
+      </div>
+      <p className="form-help">Un caso LR o RL cuenta como un caso y dos giros elementales.</p>
+      <dl className="traversals">
+        {traversalRows.map(([label, ids]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{ids?.length ? ids.map((id) => `#${id}`).join(" → ") : "—"}</dd>
+          </div>
+        ))}
+      </dl>
+    </article>
+  );
+}
+
+const ORDER_LABELS = {
+  given: "Orden de llegada",
+  ascending: "Ascendente por K",
+  descending: "Descendente por K",
+  random: "Aleatorio (semilla fija)",
+};
+
+function ComparisonPanel({ comparison, loadComparison, action }) {
+  return (
+    <article className="workspace-card">
+      <SectionHeader index="12" label="DESEMPEÑO" title="AVL VS BST POR ORDEN" />
+      <div className="panel-actions">
+        <ActionButton
+          label="Comparar órdenes de inserción"
+          onClick={loadComparison}
+          isLoading={action === "compare"}
+          secondary
+          disabled={Boolean(action)}
+        />
+      </div>
+      <p className="form-help">
+        Inserta los eventos activos, con el mismo comparador, en un AVL y un BST nuevos para cada orden y
+        busca todas las claves. Cada nodo visitado es una comparación. El catálogo no se modifica.
+      </p>
+      {comparison ? (
+        <div className="comparison-table-wrap">
+          <table className="comparison-table">
+            <thead>
+              <tr>
+                <th rowSpan="2">Orden ({comparison.size} eventos)</th>
+                <th colSpan="4">AVL</th>
+                <th colSpan="4">BST</th>
+              </tr>
+              <tr>
+                <th>Raíz</th><th>Altura</th><th>Hojas</th><th>Comp. (prom / máx)</th>
+                <th>Raíz</th><th>Altura</th><th>Hojas</th><th>Comp. (prom / máx)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparison.orders.map((row) => (
+                <tr key={row.order}>
+                  <th>{ORDER_LABELS[row.order] ?? row.order}</th>
+                  {[row.avl, row.bst].map((tree, index) => (
+                    [
+                      <td key={`r${index}`}>{tree.root_id ? `#${tree.root_id}` : "—"}</td>,
+                      <td key={`h${index}`}>{tree.height}</td>,
+                      <td key={`l${index}`}>{tree.leaves}</td>,
+                      <td key={`c${index}`}>{tree.average_comparisons} / {tree.max_comparisons}</td>,
+                    ]
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <EmptyState message="Pulsa comparar para medir ambos árboles" compact />}
+    </article>
+  );
+}
+
 function AuditVersionsPanel({ audit, versions, refreshAudit, listVersions, saveVersion, restoreVersion, action }) {
   const save = () => {
     const name = window.prompt("Nombre de la versión (ejemplo: demo-normal):");
@@ -311,8 +477,22 @@ function AuditVersionsPanel({ audit, versions, refreshAudit, listVersions, saveV
         {audit ? (
           <div className="audit-summary">
             <strong>{audit.balanced ? "Estructura válida" : "Requiere revisión"}</strong>
-            <span>{audit.unbalanced_events?.length ?? 0} nodos desbalanceados</span>
-            <small>{audit.metadata_errors?.length ? audit.metadata_errors.join("; ") : "Sin errores de metadatos"}</small>
+            <span>
+              {audit.nodes_checked} nodos verificados · orden {audit.valid_order ? "correcto" : "INCORRECTO"} ·{" "}
+              {audit.unbalanced_events?.length ?? 0} desbalanceados
+              {audit.expected_unbalance && audit.unbalanced_events?.length ? " (esperado en modo estrés)" : ""}
+            </span>
+            {audit.issues?.length ? (
+              <ul className="audit-issues">
+                {audit.issues.map((issue, index) => (
+                  <li key={`${issue.event_id}-${issue.kind}-${index}`} className={`issue-${issue.kind}`}>
+                    <strong>#{issue.event_id}</strong>
+                    <span>{AUDIT_KINDS[issue.kind] ?? issue.kind}</span>
+                    <small>{issue.detail}</small>
+                  </li>
+                ))}
+              </ul>
+            ) : <small>Sin inconsistencias: orden global, unicidad, referencias, alturas y factores correctos.</small>}
           </div>
         ) : <EmptyState message="Pulsa actualizar para auditar el estado" compact />}
       </article>
@@ -472,6 +652,12 @@ export default function App() {
     runQuery,
     queryResult,
     zones,
+    comparison,
+    loadComparison,
+    autoProcess,
+    setAutoProcess,
+    stepDelay,
+    setStepDelay,
     selectedId,
     editMode,
     editForm,
@@ -571,6 +757,10 @@ export default function App() {
             processNextReport={processNextReport}
             queueItems={queueItems}
             action={action}
+            autoProcess={autoProcess}
+            setAutoProcess={setAutoProcess}
+            stepDelay={stepDelay}
+            setStepDelay={setStepDelay}
           />
         </div>
       </section>
@@ -584,6 +774,11 @@ export default function App() {
           action={action}
         />
         <QueriesPanel runQuery={runQuery} queryResult={queryResult} openEvent={openEvent} action={action} />
+      </section>
+
+      <section className="tools-grid">
+        <IndicatorsPanel state={state} />
+        <ComparisonPanel comparison={comparison} loadComparison={loadComparison} action={action} />
       </section>
 
       <ArchivePanel

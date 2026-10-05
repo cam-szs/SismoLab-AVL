@@ -1,6 +1,7 @@
 # bst.py
 from __future__ import annotations
 
+import sys
 from typing import Any, List, Optional, Tuple
 
 from .event_key import EventKey
@@ -16,6 +17,11 @@ class DuplicateKeyError(Exception):
     """
 
 
+# The operations are recursive and a BST fed in ascending order has depth n,
+# so the default limit (1000) is raised to support the comparison scenarios.
+if sys.getrecursionlimit() < 20_000:
+    sys.setrecursionlimit(20_000)
+
 _MISSING = object()  # sentinel: "key not found" (an event may legitimately be None)
 
 
@@ -25,8 +31,8 @@ class BSTree:
     Stored heights are kept up to date. AVLTree extends this class and
     overrides `_rebalance`.
 
-    Note: a degenerate tree (e.g. ascending insertion order) has depth n,
-    so the recursion limit must be raised (sys.setrecursionlimit).
+    Note: a degenerate tree (e.g. ascending insertion order) has depth n;
+    the recursion limit is raised when this module is imported.
     """
 
     def __init__(self) -> None:

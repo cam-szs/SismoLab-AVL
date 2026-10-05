@@ -77,11 +77,39 @@ def default_zones() -> dict[str, Zone]:
 
 @dataclass(frozen=True)
 class Station:
-    """Station metadata used to describe the network."""
+    """Station metadata used to describe the network (fixed during a run)."""
 
     code: str
     x_km: float = 0.0
     y_km: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"code": self.code, "x_km": self.x_km, "y_km": self.y_km}
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> "Station":
+        if not isinstance(data, dict):
+            raise ValueError("station entries must be objects")
+        code = data.get("code")
+        if not isinstance(code, str) or not code.strip():
+            raise ValueError("station code must be a non-empty string")
+        x_km, y_km = data.get("x_km", 0.0), data.get("y_km", 0.0)
+        for value in (x_km, y_km):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1000:
+                raise ValueError(f"station {code}: coordinates must be between 0 and 1000 km")
+        return Station(code.strip(), float(x_km), float(y_km))
+
+
+def default_stations() -> dict[str, Station]:
+    """Station network of the fictional territory."""
+    stations = [
+        Station("ST-1", 400.0, 420.0),
+        Station("ST-2", 620.0, 380.0),
+        Station("ST-3", 780.0, 820.0),
+        Station("ST-4", 500.0, 150.0),
+        Station("ST-5", 150.0, 850.0),
+    ]
+    return {station.code: station for station in stations}
 
 
 @dataclass
@@ -94,7 +122,7 @@ class Scenario:
     """
 
     zones: dict[str, Zone] = field(default_factory=default_zones)
-    stations: dict[str, Station] = field(default_factory=dict)
+    stations: dict[str, Station] = field(default_factory=default_stations)
     clock: int = 0
     simulation_time: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc).replace(microsecond=0)
@@ -182,6 +210,21 @@ class Scenario:
             zone.populated and zone.contains(x_km, y_km)
             for zone in self.zones.values()
         )
+
+    def stations_payload(self) -> list[dict[str, Any]]:
+        return [station.to_dict() for station in self.stations.values()]
+
+    @staticmethod
+    def stations_from_payload(payload: Any) -> dict[str, Station]:
+        if not isinstance(payload, list):
+            raise ValueError("stations must be an array")
+        stations: dict[str, Station] = {}
+        for item in payload:
+            station = Station.from_dict(item)
+            if station.code in stations:
+                raise ValueError(f"duplicate station {station.code}")
+            stations[station.code] = station
+        return stations
 
     def zones_payload(self) -> list[dict[str, Any]]:
         return [zone.to_dict() for zone in self.zones.values()]

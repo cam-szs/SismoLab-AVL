@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, fetchJson } from "../api";
 import { findTreeNode } from "../components/TreeView";
 
@@ -50,6 +50,10 @@ export function useScenarioState() {
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState(null);
   const [queryResult, setQueryResult] = useState(null);
+  const [comparison, setComparison] = useState(null);
+  const [autoProcess, setAutoProcess] = useState(false);
+  const [stepDelay, setStepDelay] = useState(1500);
+  const autoTimer = useRef(null);
 
   const loadDetails = async (eventId) => {
     const payload = await fetchJson(`${API_URL}/api/events/${eventId}`);
@@ -327,12 +331,16 @@ export function useScenarioState() {
       });
       const result = payload.result;
       if (result) {
+        const rotations = result.rotations?.length
+          ? ` Rotaciones: ${result.rotations.map((item) => `${item.case} en #${item.node_id}`).join(", ")}.`
+          : " Sin rotaciones.";
         setNotice(
           `Reporte de ${result.report.station} para #${result.report.id} (rev ${result.report.revision}): ` +
-          `${result.decision} — ${result.message}.`
+          `${result.decision} — ${result.message}.${rotations}`
         );
       }
       await refreshState();
+      return payload.processed;
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo procesar la cola");
@@ -340,6 +348,29 @@ export function useScenarioState() {
       setAction("");
     }
   };
+
+  // Continuous processing: one report per step with a pause between steps.
+  // Each step is resolved completely (and is its own undoable action)
+  // before the next one starts.
+  useEffect(() => {
+    if (!autoProcess) return undefined;
+    let cancelled = false;
+    const step = async () => {
+      const processed = await processNextReport();
+      if (cancelled) return;
+      if (!processed) {
+        setAutoProcess(false);
+        return;
+      }
+      autoTimer.current = window.setTimeout(step, stepDelay);
+    };
+    step();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(autoTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoProcess]);
 
   const archiveEvent = async (eventId) => {
     setAction(`archive-${eventId}`);
@@ -376,10 +407,22 @@ export function useScenarioState() {
   };
 
   const recoverBalance = async () => {
+    // Global recovery pauses report processing (section 8).
+    setAutoProcess(false);
     setAction("recover-balance");
     try {
       const payload = await fetchJson(`${API_URL}/api/scenario/recover`, { method: "POST" });
       setState(payload.state);
+      const metrics = payload.metrics;
+      const delta = metrics.rotation_delta ?? {};
+      const cases = (metrics.applied_cases ?? []).map((item) => `${item.case}@#${item.node_id}(${item.balance})`);
+      setNotice(
+        `Recuperación global: ${metrics.unbalanced_before?.length ?? 0} nodos desbalanceados antes, ` +
+        `${cases.length} casos (LL ${delta.LL ?? 0}, RR ${delta.RR ?? 0}, LR ${delta.LR ?? 0}, RL ${delta.RL ?? 0}) y ` +
+        `${(delta.rotate_left ?? 0) + (delta.rotate_right ?? 0)} giros elementales. ` +
+        `Auditoría: ${payload.audit.balanced ? "AVL válido" : "con errores"}; modo ${payload.mode}.` +
+        (cases.length ? ` Detalle: ${cases.join(", ")}.` : "")
+      );
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo recuperar el AVL");
@@ -404,9 +447,27 @@ export function useScenarioState() {
   const archiveBranch = async () => {
     setAction("archive-branch");
     try {
+      const preview = await fetchJson(`${API_URL}/api/archive/branch/preview`);
+      if (!preview.root_id) {
+        setNotice(`No hay ramas elegibles (T = ${preview.age_limit_hours} h): ${preview.reason}. El estado no cambia.`);
+        return;
+      }
+      const alternatives = preview.alternatives
+        .map((item) => `#${item.root_id}: ${item.size} nodos, profundidad ${item.depth}`)
+        .join("\n");
+      const confirmed = window.confirm(
+        `Archivar la rama con raíz #${preview.root_id} (${preview.count} eventos):\n` +
+        `${preview.event_ids.map((id) => `#${id}`).join(", ")}\n\n` +
+        `Justificación: ${preview.reason}.\n\nRamas elegibles mejor ubicadas:\n${alternatives}`
+      );
+      if (!confirmed) return;
       const payload = await fetchJson(`${API_URL}/api/archive/branch`, { method: "POST" });
       setState(payload.state);
-      setError(payload.reason === "no eligible branch" ? "No hay ramas elegibles para archivar" : "");
+      setNotice(
+        `Rama #${payload.root_id} archivada: ${payload.count} eventos pasan al histórico ` +
+        `(${payload.rotations.length} casos de rotación al retirarlos). Se deshace con una sola acción.`
+      );
+      setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo archivar la rama");
     } finally {
@@ -511,7 +572,7 @@ export function useScenarioState() {
     URL.revokeObjectURL(url);
   };
 
-  const loadJsonFile = async (event) => {
+  const loadJsonFile = async (event, mode = "topology") => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
@@ -522,9 +583,18 @@ export function useScenarioState() {
       const payload = await fetchJson(`${API_URL}/api/load-json`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document, mode: "topology" }),
+        body: JSON.stringify({ document, mode }),
       });
       setState(payload.state);
+      const metrics = payload.state.metrics;
+      setNotice(
+        mode === "insertions"
+          ? `Carga por inserciones: ${metrics.avl.size} eventos. AVL raíz #${payload.state.avl?.key.event_id ?? "—"}, ` +
+            `altura ${metrics.avl.height}, ${metrics.avl.leaves} hojas · BST raíz #${payload.state.bst?.key.event_id ?? "—"}, ` +
+            `altura ${metrics.bst.height}, ${metrics.bst.leaves} hojas.`
+          : `Carga por topología: ${metrics.avl.size} eventos en modo ${payload.state.mode}` +
+            `${metrics.avl.balanced ? "" : " (topología desbalanceada, cargada en estrés)"}.`
+      );
       setError("");
     } catch (reason) {
       setError(reason instanceof SyntaxError
@@ -542,6 +612,18 @@ export function useScenarioState() {
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo consultar la auditoría");
+    }
+  };
+
+  const loadComparison = async () => {
+    setAction("compare");
+    try {
+      setComparison(await fetchJson(`${API_URL}/api/compare`));
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo comparar AVL y BST");
+    } finally {
+      setAction("");
     }
   };
 
@@ -621,6 +703,12 @@ export function useScenarioState() {
     runQuery,
     queryResult,
     zones,
+    comparison,
+    loadComparison,
+    autoProcess,
+    setAutoProcess,
+    stepDelay,
+    setStepDelay,
     selectedId,
     setSelectedId,
     editMode,
