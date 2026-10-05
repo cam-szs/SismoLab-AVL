@@ -3,14 +3,13 @@ import AssociationItem from "./components/AssociationItem";
 import ClockControls from "./components/ClockControls";
 import EmptyState from "./components/EmptyState";
 import EventList from "./components/EventList";
-import MapPoint from "./components/MapPoint";
 import MetricCard from "./components/MetricCard";
 import ModeSwitcher from "./components/ModeSwitcher";
 import NodeDetails from "./components/NodeDetails";
-import NodePanel from "./components/NodePanel";
 import ParameterGrid from "./components/ParameterGrid";
 import QueueItem from "./components/QueueItem";
 import SectionHeader from "./components/SectionHeader";
+import TerritoryMap from "./components/TerritoryMap";
 import TreeView from "./components/TreeView";
 import WorkspaceCard from "./components/WorkspaceCard";
 import { useScenarioState } from "./hooks/useScenarioState";
@@ -144,7 +143,7 @@ function StateActions({
   );
 }
 
-function TreeSection({ state, avlMetrics, bstMetrics, selectedNode, editMode, editForm, openNode, handleEditChange, submitNodeEdit, reviewEvent, archiveEvent, deleteEvent, closeNode, selectedId, action, setEditMode, setEditForm, activeEvents }) {
+function TreeSection({ state, avlMetrics, bstMetrics, openNode, openEvent, action, activeEvents }) {
   return (
     <WorkspaceCard className="tree-card" index="01" label="ESTRUCTURA" title="AVL VS BST">
       <div className="avl-summary">
@@ -171,41 +170,28 @@ function TreeSection({ state, avlMetrics, bstMetrics, selectedNode, editMode, ed
           </div>
         </div>
       </div>
-      {selectedNode && (
-        <NodePanel
-          node={selectedNode}
-          onClose={closeNode}
-          onReview={() => reviewEvent(selectedId)}
-          onArchive={() => archiveEvent(selectedId)}
-          onDelete={() => deleteEvent(selectedId)}
-          busy={Boolean(action)}
-        />
-      )}
       <EventList
         title="Eventos activos"
         events={activeEvents}
         kind="active"
         emptyMessage="Sin eventos activos"
-        onOpen={(eventId) => openNode(activeEvents.find((event) => event.id === eventId), { edit: true })}
+        onOpen={(eventId) => openEvent(eventId)}
         busy={Boolean(action)}
       />
     </WorkspaceCard>
   );
 }
 
-function MapPanel({ mapPoints, associations }) {
+function MapPanel({ zones, mapPoints, associations, openEvent }) {
+  const references = associations.filter((item) => item.is_reference);
   return (
     <WorkspaceCard className="map-card" index="02" label="TERRITORIO" title="MAPA">
-      <div className="map-grid" aria-label="Mapa de eventos">
-        {mapPoints.map((point) => (
-          <MapPoint key={point.id} id={point.id} left={point.left} top={point.top} />
-        ))}
-      </div>
+      <TerritoryMap zones={zones} points={mapPoints} associations={associations} onSelect={openEvent} />
       <div className="association-list" aria-live="polite">
-        {associations.length === 0 ? (
+        {references.length === 0 ? (
           <span className="empty-association">Sin asociaciones activas</span>
         ) : (
-          associations.slice(0, 4).map((item) => (
+          references.slice(0, 4).map((item) => (
             <AssociationItem
               key={`${item.source_id}-${item.reference_id}`}
               sourceId={item.source_id}
@@ -233,7 +219,7 @@ function QueuePanel({ form, handleInputChange, submitReport, processNextReport, 
           </label>
           <label>
             <span>Magnitud</span>
-            <input name="magnitude" value={form.magnitude} onChange={handleInputChange} type="number" step="0.1" min="0" required />
+            <input name="magnitude" value={form.magnitude} onChange={handleInputChange} type="number" step="0.1" min="-2" max="10" required />
           </label>
           <label>
             <span>Profundidad</span>
@@ -251,15 +237,24 @@ function QueuePanel({ form, handleInputChange, submitReport, processNextReport, 
             <span>Estación</span>
             <input name="station" value={form.station} onChange={handleInputChange} type="text" required />
           </label>
+          <label>
+            <span>Revisión</span>
+            <input name="revision" value={form.revision} onChange={handleInputChange} type="number" min="1" step="1" required />
+          </label>
+          <label>
+            <span>Ocurrencia (UTC)</span>
+            <input name="occurred_at" value={form.occurred_at} onChange={handleInputChange} type="datetime-local" step="1" />
+          </label>
         </div>
         <button className="submit-report" type="submit">Encolar reporte</button>
       </form>
 
       <button className="process-report" type="button" onClick={processNextReport} disabled={Boolean(action)}>
-        Crear nodo desde siguiente reporte
+        Procesar siguiente reporte
       </button>
       <p className="form-help">
-        La recepción primero encola el reporte. El nodo se crea al procesar el siguiente elemento de la cola FIFO.
+        La recepción primero encola el reporte. Al procesarlo se decide si es alta, confirmación, corrección,
+        conflicto o reporte antiguo. Sin fecha se usa el reloj de simulación.
       </p>
 
       <div className="queue-list" aria-live="polite">
@@ -346,20 +341,143 @@ function AuditVersionsPanel({ audit, versions, refreshAudit, listVersions, saveV
   );
 }
 
+const CREATE_FIELDS = [
+  ["event_id", "ID", { type: "number", min: "1", max: "999999", step: "1" }],
+  ["magnitude", "Magnitud", { type: "number", min: "-2", max: "10", step: "0.1" }],
+  ["depth_km", "Profundidad (km)", { type: "number", min: "0", max: "700", step: "0.1" }],
+  ["x_km", "Epicentro X (km)", { type: "number", min: "0", max: "1000", step: "0.1" }],
+  ["y_km", "Epicentro Y (km)", { type: "number", min: "0", max: "1000", step: "0.1" }],
+  ["station", "Estación", { type: "text" }],
+];
+
+function EventToolsPanel({ createForm, handleCreateChange, submitCreate, openEvent, action }) {
+  const lookup = (domEvent) => {
+    domEvent.preventDefault();
+    openEvent(new FormData(domEvent.currentTarget).get("lookup_id"));
+  };
+
+  return (
+    <article className="workspace-card">
+      <SectionHeader index="09" label="CATÁLOGO" title="CREAR Y CONSULTAR" />
+      <form className="report-form" onSubmit={submitCreate}>
+        <div className="field-grid">
+          {CREATE_FIELDS.map(([name, label, attributes]) => (
+            <label key={name}>
+              <span>{label}</span>
+              <input name={name} value={createForm[name]} onChange={handleCreateChange} required {...attributes} />
+            </label>
+          ))}
+          <label className="field-wide">
+            <span>Ocurrencia (UTC, vacío = reloj)</span>
+            <input name="occurred_at" value={createForm.occurred_at} onChange={handleCreateChange} type="datetime-local" step="1" />
+          </label>
+        </div>
+        <button className="submit-report" type="submit" disabled={Boolean(action)}>
+          {action === "create" ? "Creando..." : "Crear evento"}
+        </button>
+      </form>
+      <p className="form-help">
+        Se valida el rango de cada dato y que el ID no esté activo, archivado ni eliminado. La zona poblada y la
+        prioridad se calculan; el evento inicia en revisión 1 y pendiente.
+      </p>
+
+      <form className="lookup-form" onSubmit={lookup}>
+        <label>
+          <span>Buscar por ID</span>
+          <input name="lookup_id" type="number" min="1" step="1" required />
+        </label>
+        <button className="action-button secondary" type="submit" disabled={Boolean(action)}>Consultar</button>
+      </form>
+    </article>
+  );
+}
+
+function QueriesPanel({ runQuery, queryResult, openEvent, action }) {
+  const submit = (kind) => (domEvent) => {
+    domEvent.preventDefault();
+    runQuery(kind, Object.fromEntries(new FormData(domEvent.currentTarget)));
+  };
+
+  return (
+    <article className="workspace-card">
+      <SectionHeader index="10" label="ANÁLISIS" title="CONSULTAS" />
+      <div className="query-forms">
+        <form onSubmit={submit("top")}>
+          <span className="query-title">Primeros k pendientes</span>
+          <label><span>k</span><input name="k" type="number" min="1" step="1" defaultValue="5" required /></label>
+          <button className="action-button secondary" type="submit" disabled={Boolean(action)}>Ejecutar</button>
+        </form>
+        <form onSubmit={submit("magnitude")}>
+          <span className="query-title">Intervalo de magnitud</span>
+          <label><span>Mín</span><input name="min" type="number" min="-2" max="10" step="0.1" defaultValue="4.5" required /></label>
+          <label><span>Máx</span><input name="max" type="number" min="-2" max="10" step="0.1" defaultValue="10" required /></label>
+          <button className="action-button secondary" type="submit" disabled={Boolean(action)}>Ejecutar</button>
+        </form>
+        <form onSubmit={submit("depth-dates")}>
+          <span className="query-title">Profundidad ≤ H en fechas</span>
+          <label><span>H máx (km)</span><input name="maxDepth" type="number" min="0" max="700" step="0.1" defaultValue="30" required /></label>
+          <label><span>Desde (UTC)</span><input name="start" type="datetime-local" step="1" required /></label>
+          <label><span>Hasta (UTC)</span><input name="end" type="datetime-local" step="1" required /></label>
+          <button className="action-button secondary" type="submit" disabled={Boolean(action)}>Ejecutar</button>
+        </form>
+        <form onSubmit={submit("expensive")}>
+          <span className="query-title">Acceso costoso (prioridad alta, profundidad &gt; L)</span>
+          <button className="action-button secondary" type="submit" disabled={Boolean(action)}>Ejecutar</button>
+        </form>
+      </div>
+
+      {queryResult && (
+        <div className="query-result" aria-live="polite">
+          <strong>{queryResult.title}</strong>
+          <small>
+            {queryResult.events.length} resultado(s) · {queryResult.nodesExamined} de {queryResult.treeSize} nodos
+            del AVL examinados
+          </small>
+          {queryResult.events.length === 0 ? (
+            <EmptyState message="Sin resultados" compact />
+          ) : (
+            <ul>
+              {queryResult.events.map((event) => (
+                <li key={event.id}>
+                  <button type="button" onClick={() => openEvent(event.id)}>#{event.id}</button>
+                  <span>({event.priority}, {Number(event.magnitude).toFixed(1)}, {event.id})</span>
+                  <small>
+                    H {event.depth_km} km · {event.occurred_at}
+                    {event.node_depth != null && ` · profundidad ${event.node_depth} · ${event.nodes_visited} nodos visitados`}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
 export default function App() {
   const {
     state,
     error,
+    notice,
+    setNotice,
     loading,
     action,
     form,
+    createForm,
+    handleCreateChange,
+    submitCreate,
+    details,
+    openEvent,
+    runQuery,
+    queryResult,
+    zones,
     selectedId,
     editMode,
     editForm,
     openNode,
     closeNode,
     handleEditChange,
-    selectedNode,
     submitNodeEdit,
     updateMode,
     updateParameters,
@@ -392,14 +510,19 @@ export default function App() {
     audit,
     versions,
     setEditMode,
-    setEditForm,
   } = useScenarioState();
 
   return (
     <main className="shell">
       <TopBar loading={loading} error={error} />
 
-      {error && <p className="error" role="alert">{error}. Ejecuta la API en el puerto 8000.</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      {notice && (
+        <p className="notice" role="status">
+          {notice}
+          <button type="button" onClick={() => setNotice("")} aria-label="Cerrar aviso">×</button>
+        </p>
+      )}
 
       <HeroPanel mode={state?.mode} />
 
@@ -432,26 +555,15 @@ export default function App() {
             state={state}
             avlMetrics={avlMetrics}
             bstMetrics={bstMetrics}
-            selectedNode={selectedNode}
-            editMode={editMode}
-            editForm={editForm}
             openNode={openNode}
-            handleEditChange={handleEditChange}
-            submitNodeEdit={submitNodeEdit}
-            reviewEvent={reviewEvent}
-            archiveEvent={archiveEvent}
-            deleteEvent={deleteEvent}
-            closeNode={closeNode}
-            selectedId={selectedId}
+            openEvent={openEvent}
             action={action}
-            setEditMode={setEditMode}
-            setEditForm={setEditForm}
             activeEvents={activeEvents}
           />
         </div>
 
         <div className="operations-column">
-          <MapPanel mapPoints={mapPoints} associations={associations} />
+          <MapPanel zones={zones} mapPoints={mapPoints} associations={associations} openEvent={openEvent} />
           <QueuePanel
             form={form}
             handleInputChange={handleInputChange}
@@ -461,6 +573,17 @@ export default function App() {
             action={action}
           />
         </div>
+      </section>
+
+      <section className="tools-grid">
+        <EventToolsPanel
+          createForm={createForm}
+          handleCreateChange={handleCreateChange}
+          submitCreate={submitCreate}
+          openEvent={openEvent}
+          action={action}
+        />
+        <QueriesPanel runQuery={runQuery} queryResult={queryResult} openEvent={openEvent} action={action} />
       </section>
 
       <ArchivePanel
@@ -476,6 +599,24 @@ export default function App() {
         saveVersion={saveVersion}
         restoreVersion={restoreVersion}
         action={action}
+      />
+
+      <NodeDetails
+        details={details}
+        editMode={editMode}
+        editForm={editForm}
+        onEditChange={handleEditChange}
+        onStartEdit={() => setEditMode(true)}
+        onCancelEdit={() => setEditMode(false)}
+        onSubmitEdit={submitNodeEdit}
+        onReview={() => reviewEvent(selectedId)}
+        onArchive={async () => {
+          await archiveEvent(selectedId);
+          closeNode();
+        }}
+        onDelete={() => deleteEvent(selectedId)}
+        onClose={closeNode}
+        busy={Boolean(action)}
       />
     </main>
   );

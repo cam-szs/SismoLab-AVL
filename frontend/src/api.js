@@ -4,7 +4,10 @@ export async function fetchJson(url, options) {
   const response = await fetch(url, options);
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail || payload?.error || "Error del backend");
+    const detail = Array.isArray(payload?.detail)
+      ? payload.detail.map((item) => `${item.loc?.at(-1) ?? ""}: ${item.msg}`).join("; ")
+      : payload?.detail;
+    throw new Error(detail || payload?.error || "Error del backend");
   }
   return response.json();
 }

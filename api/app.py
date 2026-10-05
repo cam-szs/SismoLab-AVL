@@ -11,8 +11,7 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from domain.event import Event
-from domain.event_key import EventKey
+from domain.event import Event, _to_tenths
 from domain.queue_fifo import ReportQueue
 from domain.report import Report
 from domain.scenario import Scenario
@@ -118,6 +117,30 @@ def _event_from_dict(data: dict[str, Any]) -> Event:
     return Event.from_dict(payload)
 
 
+def _parse_utc(raw: Any, name: str = "occurred_at") -> datetime:
+    """Parse an ISO 8601 timestamp; naive values are interpreted as UTC."""
+    try:
+        parsed = datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(f"{name} must be an ISO 8601 date-time") from error
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).replace(microsecond=0)
+
+
+def _number(payload: dict[str, Any], name: str) -> float:
+    """Read a required finite number from a request body."""
+    if name not in payload or payload[name] in (None, ""):
+        raise ValueError(f"{name} is required")
+    value = payload[name]
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a number")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a number") from error
+
+
 def _report_from_dict(data: dict[str, Any]) -> Report:
     payload = dict(data)
     occurred = payload.get("occurred_at")
@@ -197,6 +220,9 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
     if not isinstance(parameters, dict):
         raise ValueError("parameters must be an object")
     candidate_scenario = Scenario()
+    zones_payload = payload.get("zones", payload.get("scenario", {}).get("zones"))
+    if zones_payload is not None:
+        candidate_scenario.zones = Scenario.zones_from_payload(zones_payload)
     candidate_scenario.set_mode(candidate_mode)
     candidate_scenario.set_parameters(
         W=parameters.get("W"),
@@ -262,6 +288,14 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
     overlap = deleted_ids & (set(active_events) | set(archived_events))
     if overlap:
         raise ValueError(f"identities cannot be active and deleted: {sorted(overlap)}")
+    # The stored populated flag is derived data: it must match the zones.
+    for event in [*active_events.values(), *archived_events.values()]:
+        expected = candidate_scenario.is_populated(event.x_km, event.y_km)
+        if event.populated_zone != expected:
+            raise ValueError(
+                f"event {event.event_id}: stored populated_zone {event.populated_zone} "
+                f"does not match the zones ({expected})"
+            )
 
     candidate_processor = ReportProcessor(
         active_events=active_events,
@@ -314,6 +348,7 @@ def _hydrate_from_snapshot(payload: dict[str, Any], *, load_mode: str = "topolog
 
     candidate_scenario.values["clock"] = candidate_clock
     candidate_scenario.values["simulation_time"] = candidate_time.isoformat().replace("+00:00", "Z")
+    SCENARIO.zones = candidate_scenario.zones
     SCENARIO.mode = candidate_scenario.mode
     SCENARIO.clock = candidate_scenario.clock
     SCENARIO.simulation_time = candidate_scenario.simulation_time
@@ -365,12 +400,76 @@ def _scenario_payload() -> dict[str, Any]:
         "simulation_time": SCENARIO.simulation_time.isoformat().replace("+00:00", "Z"),
         "parameters": SCENARIO.parameters,
         "values": SCENARIO.values.copy(),
+        "zones": SCENARIO.zones_payload(),
     }
 
 
 def _record_undo(label: str) -> None:
     """Capture a complete immutable state before a user action."""
-    UNDO_STACK.push(Snapshot(label=label, state=deepcopy(_snapshot_state())))
+    UNDO_STACK.push(_capture_undo(label))
+
+
+def _capture_undo(label: str) -> Snapshot:
+    """Capture the state before an action that may still be rejected.
+
+    The snapshot is pushed with UNDO_STACK.push only after the action
+    succeeds, so a rejected action never leaves an empty undo step.
+    """
+    return Snapshot(label=label, state=deepcopy(_snapshot_state()))
+
+
+def _event_location(event_id: int) -> dict[str, Any]:
+    """Structural data of an active event: depth, height, balance, access cost."""
+    node, visited = REPORT_PROCESSOR.locate(event_id)
+    if node is None:
+        return {}
+    depth = visited - 1
+    return {
+        "node_depth": depth,
+        "nodes_visited": visited,
+        "height": node.height,
+        "balance_factor": node.balance_factor(),
+        "expensive_access": node.event.priority == 3 and depth > SCENARIO.access_depth_limit,
+        "left_id": node.left.event_id if node.left else None,
+        "right_id": node.right.event_id if node.right else None,
+    }
+
+
+def _event_associations(event: Event) -> dict[str, Any]:
+    """Candidates, chosen reference and referencing events for one event.
+
+    Active and archived events are considered, deleted ones are not. Cost:
+    O(n) for the candidates and O(n^2) for "referenced by", because every
+    other event has to evaluate its own candidates.
+    """
+    pool = [*REPORT_PROCESSOR.active_events.values(), *REPORT_PROCESSOR.archived_events.values()]
+    limits = {
+        "max_hours": SCENARIO.association_window_hours,
+        "max_distance_km": SCENARIO.association_distance_km,
+    }
+
+    def describe(association: Any, other_id: int) -> dict[str, Any]:
+        return {
+            "event_id": other_id,
+            "status": REPORT_PROCESSOR.status_of(other_id),
+            "time_hours": round(association.time_hours, 2),
+            "distance_km": round(association.distance_km, 2),
+            "is_reference": association.is_reference,
+        }
+
+    candidates = [
+        describe(item, item.reference_id)
+        for item in ASSOCIATION_SERVICE.associate(event, pool, **limits)
+    ]
+    referenced_by = []
+    for other in pool:
+        if other.event_id == event.event_id:
+            continue
+        for item in ASSOCIATION_SERVICE.associate(other, pool, **limits):
+            if item.is_reference and item.reference_id == event.event_id:
+                referenced_by.append(describe(item, other.event_id))
+    reference = next((item["event_id"] for item in candidates if item["is_reference"]), None)
+    return {"candidates": candidates, "reference_id": reference, "referenced_by": referenced_by}
 
 
 @app.get("/api/health")
@@ -552,9 +651,69 @@ def archive_branch() -> dict[str, Any]:
     }
 
 
+@app.post("/api/events")
+def create_event(payload: dict[str, Any]) -> dict[str, Any]:
+    """Manually create an event (section 6) as one undoable action.
+
+    Ranges, one-decimal precision, the occurrence time against the simulation
+    clock and the uniqueness of the id (active, archived or deleted) are all
+    validated before any structure is modified.
+    """
+    if "event_id" not in payload:
+        raise ValueError("event_id is required")
+    event_id = payload["event_id"]
+    if isinstance(event_id, bool) or not isinstance(event_id, int):
+        raise ValueError("event_id must be an integer")
+    occurred_at = (
+        _parse_utc(payload["occurred_at"])
+        if payload.get("occurred_at") not in (None, "")
+        else SCENARIO.simulation_time
+    )
+    if occurred_at > SCENARIO.simulation_time:
+        raise ValueError("occurrence time cannot be after the simulation clock")
+    report = Report.create(
+        event_id=event_id,
+        magnitude=_number(payload, "magnitude"),
+        depth_km=_number(payload, "depth_km"),
+        x_km=_number(payload, "x_km"),
+        y_km=_number(payload, "y_km"),
+        occurred_at=occurred_at,
+        station=str(payload.get("station", "")),
+        revision=1,
+    )
+    snapshot = _capture_undo("create event")
+    event = REPORT_PROCESSOR.create(report)
+    UNDO_STACK.push(snapshot)
+    return {"created": True, "event": event.to_dict(), "state": _snapshot_state()}
+
+
+@app.get("/api/events/{event_id}")
+def lookup_event(event_id: int) -> dict[str, Any]:
+    """Locate an event by identifier even if its priority or magnitude changed."""
+    status = REPORT_PROCESSOR.status_of(event_id)
+    result: dict[str, Any] = {"event_id": event_id, "status": status}
+    if status == "unknown":
+        raise KeyError(f"event {event_id} does not exist")
+    if status == "deleted":
+        return result
+    event = (
+        REPORT_PROCESSOR.active_events.get(event_id)
+        or REPORT_PROCESSOR.archived_events[event_id]
+    )
+    result["event"] = event.to_dict()
+    result["key"] = str(event.key)
+    result["associations"] = _event_associations(event)
+    if status == "active":
+        result["location"] = _event_location(event_id)
+        result["depth_limit"] = SCENARIO.access_depth_limit
+    return result
+
+
 @app.post("/api/events/{event_id}/correct")
 def correct_event(event_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     """Apply a correction to an active event and return the new snapshot."""
+    if "populated_zone" in payload:
+        raise ValueError("populated zone is derived from the epicenter and cannot be set")
     changes: dict[str, object] = {}
     field_map = {
         "magnitude": "magnitude_tenths",
@@ -564,37 +723,42 @@ def correct_event(event_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     }
     for source, target in field_map.items():
         if source in payload:
-            value = float(payload[source])
-            changes[target] = EventKey.to_tenths(value)
-    if "populated_zone" in payload:
-        changes["populated_zone"] = bool(payload["populated_zone"])
+            changes[target] = _to_tenths(_number(payload, source), source)
+    if payload.get("occurred_at") not in (None, ""):
+        occurred_at = _parse_utc(payload["occurred_at"])
+        if occurred_at > SCENARIO.simulation_time:
+            raise ValueError("occurrence time cannot be after the simulation clock")
+        changes["occurred_at"] = occurred_at
 
+    snapshot = _capture_undo("correct event")
     try:
-        _record_undo("correct event")
         event = REPORT_PROCESSOR.correct(event_id, changes)
     except (KeyError, ValueError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    UNDO_STACK.push(snapshot)
     return {"corrected": True, "event": event.to_dict(), "state": _snapshot_state()}
 
 
 @app.post("/api/events/{event_id}/delete")
 def delete_event(event_id: int) -> dict[str, Any]:
     """Delete an active event and expose the updated live state."""
+    snapshot = _capture_undo("delete event")
     try:
-        _record_undo("delete event")
         event = REPORT_PROCESSOR.delete(event_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    UNDO_STACK.push(snapshot)
     return {"deleted": True, "event_id": event.event_id, "state": _snapshot_state()}
 
 
 @app.post("/api/events/{event_id}/review")
 def review_event(event_id: int) -> dict[str, Any]:
-    _record_undo("mark event reviewed")
+    snapshot = _capture_undo("mark event reviewed")
     try:
         event = REPORT_PROCESSOR.mark_reviewed(event_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    UNDO_STACK.push(snapshot)
     return {"reviewed": True, "event": event.to_dict(), "state": _snapshot_state()}
 
 
@@ -668,30 +832,60 @@ def restore_version(name: str) -> dict[str, Any]:
 
 @app.get("/api/queries/expensive")
 def expensive_events() -> dict[str, Any]:
+    """High-priority events deeper than L. The depth of every node is
+    computed with one breadth-first pass, so all n nodes are examined."""
     entries = REPORT_PROCESSOR.query_expensive_access(SCENARIO.access_depth_limit)
     return {
         "limit": SCENARIO.access_depth_limit,
+        "nodes_examined": REPORT_PROCESSOR.tree.size,
         "events": [
             {
                 **entry["event"].to_dict(),
                 "node_depth": entry["depth"],
                 "nodes_visited": entry["visited"],
             }
-            for entry in entries
+            for entry in sorted(entries, key=lambda item: item["event"].key, reverse=True)
         ],
     }
 
 
 @app.get("/api/queries/top-pending")
 def top_pending(limit: int = 5) -> dict[str, Any]:
-    if limit < 1:
-        raise HTTPException(status_code=400, detail="limit must be positive")
-    events = [
-        node.event
-        for node in REPORT_PROCESSOR.tree.reverse_inorder()
-        if node.event.status.value == "pending"
-    ][:limit]
-    return {"limit": limit, "events": [event.to_dict() for event in events]}
+    result = REPORT_PROCESSOR.query_top_pending(limit)
+    return {
+        "limit": limit,
+        "nodes_examined": result["nodes_examined"],
+        "events": [event.to_dict() for event in result["events"]],
+    }
+
+
+@app.get("/api/queries/magnitude")
+def magnitude_range(min: float, max: float) -> dict[str, Any]:
+    result = REPORT_PROCESSOR.query_magnitude_range(
+        _to_tenths(min, "min"), _to_tenths(max, "max")
+    )
+    return {
+        "min": min,
+        "max": max,
+        "nodes_examined": result["nodes_examined"],
+        "events": [event.to_dict() for event in result["events"]],
+    }
+
+
+@app.get("/api/queries/depth-dates")
+def depth_and_dates(max_depth: float, start: str, end: str) -> dict[str, Any]:
+    result = REPORT_PROCESSOR.query_depth_and_dates(
+        _to_tenths(max_depth, "max_depth"),
+        _parse_utc(start, "start"),
+        _parse_utc(end, "end"),
+    )
+    return {
+        "max_depth": max_depth,
+        "start": start,
+        "end": end,
+        "nodes_examined": result["nodes_examined"],
+        "events": [event.to_dict() for event in result["events"]],
+    }
 
 
 @app.post("/api/persist")

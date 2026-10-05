@@ -3,8 +3,35 @@ function formatNumber(value, digits = 1) {
   return Number.isFinite(numeric) ? numeric.toFixed(digits) : "—";
 }
 
+const STATUS_LABELS = {
+  active: "Activo",
+  archived: "Archivado",
+  deleted: "Eliminado",
+};
+
+function AssociationRows({ title, items, emptyMessage }) {
+  return (
+    <div className="node-associations">
+      <span className="node-modal-eyebrow">{title}</span>
+      {items.length === 0 ? (
+        <small>{emptyMessage}</small>
+      ) : (
+        <ul>
+          {items.map((item) => (
+            <li key={item.event_id}>
+              <strong>#{item.event_id}</strong>
+              <span>{STATUS_LABELS[item.status] ?? item.status}</span>
+              <small>{item.distance_km} km · {item.time_hours} h{item.is_reference ? " · referencia elegida" : ""}</small>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function NodeDetails({
-  node,
+  details,
   editMode,
   editForm,
   onEditChange,
@@ -17,27 +44,39 @@ export default function NodeDetails({
   onClose,
   busy,
 }) {
-  if (!node) return null;
-  const event = node.event ?? {};
-  const key = node.key ?? {};
-  const status = event.status ?? "pending";
-  const rows = [
-    ["Identificador", `#${event.id ?? key.event_id}`],
-    ["Clave (P, M, I)", `(${key.priority}, ${formatNumber(key.magnitude_tenths / 10)}, ${key.event_id})`],
-    ["Prioridad", key.priority],
+  if (!details) return null;
+  const { status, event_id: eventId } = details;
+  const event = details.event ?? {};
+  const location = details.location ?? {};
+  const associations = details.associations ?? { candidates: [], referenced_by: [] };
+  const isActive = status === "active";
+
+  const rows = status === "deleted" ? [
+    ["Estado", "Eliminado (identificador retirado)"],
+    ["Recuperación", "Solo al deshacer la eliminación o restaurar una versión"],
+  ] : [
+    ["Estado", STATUS_LABELS[status] ?? status],
+    ["Clave (P, M, I)", details.key],
+    ["Prioridad", event.priority],
     ["Magnitud", formatNumber(event.magnitude)],
-    ["Profundidad", `${formatNumber(event.depth_km)} km`],
-    ["Epicentro X", `${formatNumber(event.epicenter?.x)} km`],
-    ["Epicentro Y", `${formatNumber(event.epicenter?.y)} km`],
+    ["Profundidad hipocentro", `${formatNumber(event.depth_km)} km`],
+    ["Epicentro", `(${formatNumber(event.epicenter?.x)}, ${formatNumber(event.epicenter?.y)}) km`],
     ["Zona poblada", event.populated_zone ? "Sí" : "No"],
     ["Ocurrencia (UTC)", event.occurred_at ?? "—"],
     ["Revisión", event.revision ?? "—"],
     ["Estaciones", (event.stations ?? []).join(", ") || "—"],
-    ["Estado", status === "reviewed" ? "Revisado" : "Pendiente"],
-    ["Altura en el árbol", node.height],
-    ["Factor de balanceo", node.factor_balanceo],
-    ["Hijo izquierdo", node.izquierdo ? `#${node.izquierdo.key.event_id}` : "—"],
-    ["Hijo derecho", node.derecho ? `#${node.derecho.key.event_id}` : "—"],
+    ["Atención", event.status === "reviewed" ? "Revisado" : "Pendiente"],
+    ...(isActive ? [
+      ["Profundidad del nodo", location.node_depth],
+      ["Nodos visitados por clave", location.nodes_visited],
+      ["Altura del nodo", location.height],
+      ["Factor de balance", location.balance_factor],
+      ["Acceso costoso", location.expensive_access
+        ? `Sí (profundidad ${location.node_depth} > L = ${details.depth_limit})`
+        : `No (L = ${details.depth_limit})`],
+      ["Hijo izquierdo", location.left_id ? `#${location.left_id}` : "—"],
+      ["Hijo derecho", location.right_id ? `#${location.right_id}` : "—"],
+    ] : []),
   ];
 
   return (
@@ -46,13 +85,13 @@ export default function NodeDetails({
         className="node-modal"
         role="dialog"
         aria-modal="true"
-        aria-label={`Detalles del evento ${event.id ?? key.event_id}`}
+        aria-label={`Detalles del evento ${eventId}`}
         onClick={(domEvent) => domEvent.stopPropagation()}
       >
         <div className="node-modal-header">
           <div>
-            <span className="node-modal-eyebrow">NODO DEL ÁRBOL</span>
-            <h3>Evento #{event.id ?? key.event_id}</h3>
+            <span className="node-modal-eyebrow">CONSULTA POR IDENTIFICADOR</span>
+            <h3>Evento #{eventId}</h3>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Cerrar">
             ×
@@ -63,29 +102,48 @@ export default function NodeDetails({
           {rows.map(([label, value]) => (
             <div className="node-field" key={label}>
               <dt>{label}</dt>
-              <dd>{value}</dd>
+              <dd>{value ?? "—"}</dd>
             </div>
           ))}
         </dl>
 
-        {editMode ? (
+        {status !== "deleted" && (
+          <div className="node-association-grid">
+            <AssociationRows
+              title="CANDIDATOS A REFERENCIA"
+              items={associations.candidates}
+              emptyMessage="Sin candidatos: queda sin asociación"
+            />
+            <AssociationRows
+              title="LO USAN COMO REFERENCIA"
+              items={associations.referenced_by}
+              emptyMessage="Ningún evento lo usa como referencia"
+            />
+          </div>
+        )}
+
+        {isActive && editMode ? (
           <form className="node-edit" onSubmit={onSubmitEdit}>
-            <p className="node-edit-hint">Edita los valores y guarda para generar una nueva revisión.</p>
+            <p className="node-edit-hint">
+              La corrección genera la revisión {Number(event.revision ?? 0) + 1}, recalcula zona y prioridad
+              y deja el evento pendiente.
+            </p>
             <div className="field-grid">
               {[
-                ["magnitude", "Magnitud"],
-                ["depth_km", "Profundidad (km)"],
-                ["x_km", "Epicentro X (km)"],
-                ["y_km", "Epicentro Y (km)"],
-              ].map(([name, label]) => (
+                ["magnitude", "Magnitud", "number"],
+                ["depth_km", "Profundidad (km)", "number"],
+                ["x_km", "Epicentro X (km)", "number"],
+                ["y_km", "Epicentro Y (km)", "number"],
+                ["occurred_at", "Ocurrencia (UTC)", "datetime-local"],
+              ].map(([name, label, type]) => (
                 <label key={name}>
                   <span>{label}</span>
                   <input
                     name={name}
                     value={editForm?.[name] ?? ""}
                     onChange={onEditChange}
-                    type="number"
-                    step="0.1"
+                    type={type}
+                    step={type === "number" ? "0.1" : "1"}
                     required
                   />
                 </label>
@@ -100,15 +158,15 @@ export default function NodeDetails({
               </button>
             </div>
           </form>
-        ) : (
+        ) : isActive ? (
           <div className="node-modal-actions">
             <button
               type="button"
               className="action-button"
               onClick={onReview}
-              disabled={busy || status === "reviewed"}
+              disabled={busy || event.status === "reviewed"}
             >
-              {status === "reviewed" ? "Ya revisado" : "Marcar revisado"}
+              {event.status === "reviewed" ? "Ya revisado" : "Marcar revisado"}
             </button>
             <button type="button" className="action-button secondary" onClick={onStartEdit} disabled={busy}>
               Corregir
@@ -120,7 +178,7 @@ export default function NodeDetails({
               Eliminar
             </button>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

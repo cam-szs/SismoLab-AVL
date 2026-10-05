@@ -131,3 +131,12 @@ This project was primarily developed by the student team. The AI assistant suppo
 - **Result:** the topology exporter moved to `BSTree` (shared by the AVL through inheritance); `ReportProcessor` now keeps an unrotated `BSTree` mirror fed with the same insertions, corrections, deletions, and archival as the AVL; `/api/state`, the metrics payload, `persist`, and `load` expose the `bst` topology plus size/height/leaf metrics; the React view replaces the nested list with an SVG `TreeView` (circles, straight lines, priority colors, balance-factor badges) and shows AVL and BST side by side; added regression tests for the mirror and the API contract.
 - **Human review required:** confirm the mirror stays synchronized under corrections, archival, and deletion, and verify the SVG layout and responsive breakpoints.
 - **Owner for understanding:** all three teammates.
+
+## Zones, manual creation, lookup by id and section 11 queries
+
+- **Date:** 2026-10-05
+- **Scope:** `domain/scenario.py`, `services/report_processor.py`, `api/app.py`, `frontend/src/App.jsx`, `frontend/src/hooks/useScenarioState.js`, `frontend/src/components/NodeDetails.jsx`, `frontend/src/components/TerritoryMap.jsx`, `frontend/src/api.js`, `frontend/src/styles.css`, `tests/test_events_queries.py`.
+- **Request:** compare the implementation against the assignment and close the mandatory gaps in sections 3, 6 and 11.
+- **Result:** default fictional zones (with a shared border to show the "populated wins" rule) that are saved, restored and checked against each event's stored `populated_zone`; `POST /api/events` for manual creation with full validation and no partial state; `GET /api/events/{id}` returning active/archived/deleted status, node depth, visited nodes, height, balance, expensive-access flag and associations; manual corrections recompute the populated zone and may change the occurrence time; queries for top-k pending, magnitude interval (prunes subtrees using the key bounds), depth and date interval, and expensive access, all reporting examined AVL nodes; rejected actions no longer push an undo step; the React app gained a territory map, create/lookup and query panels, and the previously unused correction dialog.
+- **Human review required:** verify the zone geometry, the pruning argument in `_magnitude_span`, the cost analysis of each query, and the new UI flows.
+- **Owner for understanding:** Jeronimo (queries and pruning), all three teammates (creation and lookup).

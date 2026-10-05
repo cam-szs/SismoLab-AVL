@@ -8,33 +8,84 @@ export const emptyForm = {
   depth_km: "",
   x_km: "",
   y_km: "",
+  occurred_at: "",
+  station: "ST-",
+  revision: "1",
+};
+
+export const emptyCreateForm = {
+  event_id: "",
+  magnitude: "",
+  depth_km: "",
+  x_km: "",
+  y_km: "",
+  occurred_at: "",
   station: "ST-",
 };
+
+// <input type="datetime-local"> has no zone; the observatory works in UTC,
+// so the typed value is sent as UTC. Empty means "use the simulation clock".
+export function toUtcIso(value) {
+  if (!value) return undefined;
+  const withSeconds = value.length === 16 ? `${value}:00` : value;
+  return `${withSeconds}Z`;
+}
+
+export function fromUtcIso(value) {
+  return value ? value.replace("Z", "").slice(0, 19) : "";
+}
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
 
 export function useScenarioState() {
   const [state, setState] = useState(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState("");
   const [form, setForm] = useState(emptyForm);
+  const [createForm, setCreateForm] = useState(emptyCreateForm);
   const [selectedId, setSelectedId] = useState(null);
+  const [details, setDetails] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState(null);
+  const [queryResult, setQueryResult] = useState(null);
 
-  const openNode = (node, { edit = false } = {}) => {
-    if (!node) return;
-    setSelectedId(node.key.event_id);
-    setEditMode(edit);
-    setEditForm({
-      magnitude: String(node.event?.magnitude ?? node.key.magnitude_tenths / 10),
-      depth_km: String(node.event?.depth_km ?? 0),
-      x_km: String(node.event?.epicenter?.x ?? 0),
-      y_km: String(node.event?.epicenter?.y ?? 0),
-    });
+  const loadDetails = async (eventId) => {
+    const payload = await fetchJson(`${API_URL}/api/events/${eventId}`);
+    setDetails(payload);
+    return payload;
   };
+
+  // Open the detail dialog of any event (active, archived or deleted) by id.
+  const openEvent = async (eventId, { edit = false } = {}) => {
+    if (eventId == null || eventId === "") return;
+    setAction(`lookup-${eventId}`);
+    try {
+      const payload = await loadDetails(Number(eventId));
+      const event = payload.event ?? {};
+      setSelectedId(Number(eventId));
+      setEditMode(edit && payload.status === "active");
+      setEditForm({
+        magnitude: String(event.magnitude ?? ""),
+        depth_km: String(event.depth_km ?? ""),
+        x_km: String(event.epicenter?.x ?? ""),
+        y_km: String(event.epicenter?.y ?? ""),
+        occurred_at: fromUtcIso(event.occurred_at),
+      });
+      setError("");
+    } catch (reason) {
+      setError(reason.message || `No existe el evento #${eventId}`);
+    } finally {
+      setAction("");
+    }
+  };
+
+  const openNode = (node, options) => openEvent(node?.key?.event_id ?? node?.id, options);
 
   const closeNode = () => {
     setSelectedId(null);
+    setDetails(null);
     setEditMode(false);
     setEditForm(null);
   };
@@ -60,20 +111,104 @@ export function useScenarioState() {
     try {
       const payload = await fetchJson(`${API_URL}/api/events/${selectedId}/correct`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: JSON_HEADERS,
         body: JSON.stringify({
           magnitude: Number(editForm.magnitude),
           depth_km: Number(editForm.depth_km),
           x_km: Number(editForm.x_km),
           y_km: Number(editForm.y_km),
+          occurred_at: toUtcIso(editForm.occurred_at),
         }),
       });
       setState(payload.state);
+      await loadDetails(selectedId);
       setEditMode(false);
-      setEditForm(null);
+      const corrected = payload.event;
+      setNotice(
+        `Corrección aceptada: #${corrected.id} pasa a revisión ${corrected.revision}, ` +
+        `prioridad ${corrected.priority} y queda pendiente.`
+      );
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo guardar la corrección");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const handleCreateChange = (event) => {
+    const { name, value } = event.target;
+    setCreateForm((previous) => ({ ...previous, [name]: value }));
+  };
+
+  const submitCreate = async (event) => {
+    event.preventDefault();
+    setAction("create");
+    try {
+      const payload = await fetchJson(`${API_URL}/api/events`, {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          event_id: Number(createForm.event_id),
+          magnitude: Number(createForm.magnitude),
+          depth_km: Number(createForm.depth_km),
+          x_km: Number(createForm.x_km),
+          y_km: Number(createForm.y_km),
+          occurred_at: toUtcIso(createForm.occurred_at),
+          station: createForm.station,
+        }),
+      });
+      setState(payload.state);
+      setCreateForm(emptyCreateForm);
+      const created = payload.event;
+      setNotice(
+        `Evento #${created.id} creado con revisión 1: ` +
+        `${created.populated_zone ? "zona poblada" : "zona no poblada"}, prioridad ${created.priority}, ` +
+        `clave (${created.priority}, ${created.magnitude.toFixed(1)}, ${created.id}).`
+      );
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo crear el evento");
+    } finally {
+      setAction("");
+    }
+  };
+
+  const formatTime = (iso) => (iso ? iso.replace("T", " ").replace("Z", "") : "");
+
+  // Section 11 queries. Each response reports how many AVL nodes were examined.
+  const runQuery = async (kind, params = {}) => {
+    setAction(`query-${kind}`);
+    try {
+      let url;
+      let title;
+      if (kind === "top") {
+        url = `/api/queries/top-pending?limit=${encodeURIComponent(params.k)}`;
+        title = `Primeros ${params.k} pendientes (K descendente)`;
+      } else if (kind === "magnitude") {
+        url = `/api/queries/magnitude?min=${encodeURIComponent(params.min)}&max=${encodeURIComponent(params.max)}`;
+        title = `Magnitud entre ${params.min} y ${params.max}`;
+      } else if (kind === "depth-dates") {
+        const start = toUtcIso(params.start);
+        const end = toUtcIso(params.end);
+        url = `/api/queries/depth-dates?max_depth=${encodeURIComponent(params.maxDepth)}` +
+          `&start=${encodeURIComponent(start ?? "")}&end=${encodeURIComponent(end ?? "")}`;
+        title = `H ≤ ${params.maxDepth} km entre ${formatTime(start)} y ${formatTime(end)}`;
+      } else {
+        url = "/api/queries/expensive";
+        title = "Prioridad alta con acceso costoso";
+      }
+      const payload = await fetchJson(`${API_URL}${url}`);
+      setQueryResult({
+        kind,
+        title: kind === "expensive" ? `${title} (L = ${payload.limit})` : title,
+        events: payload.events ?? [],
+        nodesExamined: payload.nodes_examined,
+        treeSize: state?.metrics?.avl?.size ?? 0,
+      });
+      setError("");
+    } catch (reason) {
+      setError(reason.message || "No se pudo ejecutar la consulta");
     } finally {
       setAction("");
     }
@@ -168,8 +303,9 @@ export function useScenarioState() {
           depth_km: Number(form.depth_km),
           x_km: Number(form.x_km),
           y_km: Number(form.y_km),
+          occurred_at: toUtcIso(form.occurred_at),
           station: form.station,
-          revision: 1,
+          revision: Number(form.revision || 1),
         }),
       });
       setForm(emptyForm);
@@ -185,10 +321,17 @@ export function useScenarioState() {
   const processNextReport = async () => {
     setAction("process");
     try {
-      await fetchJson(`${API_URL}/api/queue/process`, {
+      const payload = await fetchJson(`${API_URL}/api/queue/process`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
+      const result = payload.result;
+      if (result) {
+        setNotice(
+          `Reporte de ${result.report.station} para #${result.report.id} (rev ${result.report.revision}): ` +
+          `${result.decision} — ${result.message}.`
+        );
+      }
       await refreshState();
       setError("");
     } catch (reason) {
@@ -276,6 +419,8 @@ export function useScenarioState() {
     try {
       const payload = await fetchJson(`${API_URL}/api/events/${eventId}/review`, { method: "POST" });
       setState(payload.state);
+      if (selectedId === eventId) await loadDetails(eventId);
+      setNotice(`Evento #${eventId} marcado como revisado. Su clave no cambia, así que el árbol no se modifica.`);
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo marcar el evento");
@@ -304,11 +449,21 @@ export function useScenarioState() {
   };
 
   const deleteEvent = async (eventId) => {
-    if (!window.confirm(`¿Eliminar el evento #${eventId}?`)) return;
+    const event = (state?.events ?? []).find((item) => item.id === eventId);
+    const summary = event
+      ? `\nClave (${event.priority}, ${Number(event.magnitude).toFixed(1)}, ${event.id}) · ` +
+        `M ${event.magnitude} · H ${event.depth_km} km · ${event.occurred_at}`
+      : "";
+    if (!window.confirm(
+      `¿Eliminar el evento #${eventId}?${summary}\n\nSolo se retira este evento; sus descendientes siguen activos ` +
+      "y el identificador no podrá reutilizarse."
+    )) return;
     setAction(`delete-${eventId}`);
     try {
       const payload = await fetchJson(`${API_URL}/api/events/${eventId}/delete`, { method: "POST" });
       setState(payload.state);
+      if (selectedId === eventId) await loadDetails(eventId);
+      setNotice(`Evento #${eventId} eliminado. El identificador queda retirado.`);
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo eliminar el evento");
@@ -433,19 +588,39 @@ export function useScenarioState() {
   const associations = state?.associations ?? [];
   const avlMetrics = state?.metrics?.avl ?? {};
   const bstMetrics = state?.metrics?.bst ?? {};
-  const mapPoints = activeEvents.map((event) => ({
+  const depthLimit = state?.parameters?.L ?? 3;
+  const depths = avlMetrics.depths ?? {};
+  const mapPoints = [
+    ...activeEvents.map((event) => ({ event, archived: false })),
+    ...archivedEvents.map((event) => ({ event, archived: true })),
+  ].map(({ event, archived }) => ({
     id: event.id,
-    left: Math.min(90, Math.max(8, (event.epicenter?.x ?? 0) / 10)),
-    top: Math.min(90, Math.max(8, (event.epicenter?.y ?? 0) / 10)),
+    x: event.epicenter?.x ?? 0,
+    y: event.epicenter?.y ?? 0,
+    magnitude: event.magnitude,
+    priority: event.priority,
+    archived,
+    expensive: !archived && event.priority === 3 && (depths[event.id] ?? 0) > depthLimit,
   }));
+  const zones = state?.scenario?.zones ?? [];
 
   return {
     state,
     error,
+    notice,
+    setNotice,
     loading,
     action,
     form,
     setForm,
+    createForm,
+    handleCreateChange,
+    submitCreate,
+    details,
+    openEvent,
+    runQuery,
+    queryResult,
+    zones,
     selectedId,
     setSelectedId,
     editMode,
