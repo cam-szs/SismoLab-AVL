@@ -1,9 +1,41 @@
-export default function ClockControls({ onAdvance }) {
+import { useState } from "react";
+
+// The simulation clock only moves forward, in whole hours typed by the user.
+export default function ClockControls({ onAdvance, simulationTime, disabled = false }) {
+  const [hours, setHours] = useState("");
+
+  const submit = (event) => {
+    event.preventDefault();
+    const amount = Number(hours);
+    if (!Number.isInteger(amount) || amount < 1) return;
+    onAdvance?.(amount);
+    setHours("");
+  };
+
   return (
-    <div className="clock-actions" aria-label="Controles del reloj">
-      <button type="button" onClick={() => onAdvance?.(1)}>+1</button>
-      <button type="button" onClick={() => onAdvance?.(5)}>+5</button>
-      <button type="button" onClick={() => onAdvance?.(10)}>+10</button>
-    </div>
+    <form className="clock-form" aria-label="Controles del reloj" onSubmit={submit}>
+      {simulationTime && (
+        <p className="clock-now">
+          Reloj actual: <strong>{simulationTime.replace("T", " ").replace("Z", "")} UTC</strong>
+        </p>
+      )}
+      <label>
+        <span>Avanzar (horas)</span>
+        <input
+          name="hours"
+          type="number"
+          min="1"
+          step="1"
+          inputMode="numeric"
+          placeholder="Ej: 80"
+          value={hours}
+          onChange={(event) => setHours(event.target.value)}
+          required
+        />
+      </label>
+      <button type="submit" className="action-button" disabled={disabled}>
+        Avanzar reloj
+      </button>
+    </form>
   );
 }

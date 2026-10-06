@@ -96,7 +96,11 @@ function ScenarioControls({ state, action, updateMode, updateParameters, advance
 
       <div className="scenario-card">
         <SectionHeader index="05" label="TIEMPO" title="RELOJ" />
-        <ClockControls onAdvance={advanceClock} />
+        <ClockControls
+          onAdvance={advanceClock}
+          simulationTime={state?.simulation_time}
+          disabled={Boolean(action)}
+        />
       </div>
     </section>
   );

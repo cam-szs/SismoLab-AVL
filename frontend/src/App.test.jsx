@@ -94,13 +94,28 @@ test("ModeSwitcher highlights the selected mode and triggers updates", () => {
   expect(onChange).toHaveBeenCalledWith("stress");
 });
 
-test("ClockControls calls the increment handler with the right step", () => {
+test("ClockControls advances by the hours typed by the user", () => {
+  const onAdvance = vi.fn();
+
+  render(<ClockControls onAdvance={onAdvance} simulationTime="2026-10-01T10:00:00Z" />);
+
+  expect(screen.getByText("2026-10-01 10:00:00 UTC")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Avanzar (horas)"), { target: { value: "80" } });
+  fireEvent.click(screen.getByRole("button", { name: "Avanzar reloj" }));
+  expect(onAdvance).toHaveBeenCalledWith(80);
+});
+
+test("ClockControls ignores non-positive or fractional hours", () => {
   const onAdvance = vi.fn();
 
   render(<ClockControls onAdvance={onAdvance} />);
 
-  fireEvent.click(screen.getByRole("button", { name: "+5" }));
-  expect(onAdvance).toHaveBeenCalledWith(5);
+  const input = screen.getByLabelText("Avanzar (horas)");
+  for (const value of ["0", "-3", "1.5"]) {
+    fireEvent.change(input, { target: { value } });
+    fireEvent.submit(input.closest("form"));
+  }
+  expect(onAdvance).not.toHaveBeenCalled();
 });
 
 test("ParameterGrid renders configured inputs and updates values", () => {
