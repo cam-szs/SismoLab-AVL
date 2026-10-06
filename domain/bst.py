@@ -117,16 +117,28 @@ class BSTree:
                 return node.right, removed
             if node.right is None:
                 return node.left, removed
-            # Two children: copy the in-order successor and delete it from the right subtree.
-            successor = node.right
-            while successor.left is not None:
-                successor = successor.left
-            node.key, node.event = successor.key, successor.event
-            node.right, _ = self._delete(node.right, successor.key)
+            # Two children: the in-order predecessor (largest key of the left
+            # subtree) takes this node's place. The predecessor node itself is
+            # relinked, not copied, so every node keeps its own event.
+            new_left, predecessor = self._detach_max(node.left)
+            predecessor.left = new_left
+            predecessor.right = node.right
+            return self._rebalance(predecessor), removed
 
         if removed is _MISSING:
             return node, removed          # nothing changed, no rebalance needed
         return self._rebalance(node), removed
+
+    def _detach_max(self, node: Node) -> Tuple[Optional[Node], Node]:
+        """Unlink the largest node of a subtree.
+
+        Returns (subtree without it, the detached node). The path back up is
+        rebalanced, so in the AVL every subtree on that path stays valid.
+        """
+        if node.right is None:
+            return node.left, node
+        node.right, maximum = self._detach_max(node.right)
+        return self._rebalance(node), maximum
 
     # ---------- traversals (recursive, return lists of nodes) ----------
 

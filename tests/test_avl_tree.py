@@ -68,3 +68,72 @@ def test_disabling_stress_mode_recovers_by_default() -> None:
 
     assert tree.stress_mode is False
     assert tree.is_balanced() is True
+
+
+# ---------- deletion with the in-order predecessor ----------
+
+import random
+
+from domain.bst import BSTree
+
+
+def build(tree, ids):
+    for event_id in ids:
+        tree.insert(EventKey(1, 30, event_id), event_id)
+    return tree
+
+
+def test_deleting_the_root_promotes_its_in_order_predecessor() -> None:
+    #        50                 40
+    #       /  \               /  \
+    #     30    70     ->    30    70
+    #    /  \   /           /     /
+    #   20  40 60          20    60
+    tree = build(AVLTree(), [50, 30, 70, 20, 40, 60])
+    predecessor_node = tree.root.left.right                    # node holding 40
+
+    tree.remove(EventKey(1, 30, 50))
+
+    assert tree.root is predecessor_node                       # relinked, not copied
+    assert tree.root.event == 40
+    assert tree.root.left.key.event_id == 30
+    assert tree.root.right.key.event_id == 70
+    assert tree.is_balanced()
+
+
+def test_predecessor_deep_in_the_left_subtree_rebalances_the_path() -> None:
+    tree = build(AVLTree(), [50, 30, 70, 20, 40, 60, 80, 10, 35, 45, 90, 47])
+    tree.remove(EventKey(1, 30, 50))
+    assert tree.root.key.event_id == 47
+    assert tree.is_balanced()
+    assert [node.key.event_id for node in tree.inorder()] == [10, 20, 30, 35, 40, 45, 47, 60, 70, 80, 90]
+
+
+def test_deletion_that_unbalances_the_tree_rotates() -> None:
+    tree = build(AVLTree(), [20, 10, 30, 40])
+    rotations_before = tree.rotations_count["RR"]
+    tree.remove(EventKey(1, 30, 10))                           # left side becomes too short
+    assert tree.rotations_count["RR"] == rotations_before + 1
+    assert tree.root.key.event_id == 30
+    assert tree.is_balanced()
+
+
+def test_plain_bst_also_uses_the_predecessor() -> None:
+    tree = build(BSTree(), [50, 30, 70, 20, 40])
+    tree.delete(EventKey(1, 30, 50))
+    assert tree.root.key.event_id == 40
+    assert [node.key.event_id for node in tree.inorder()] == [20, 30, 40, 70]
+
+
+def test_nodes_keep_their_own_events_while_balancing(seed_count: int = 30) -> None:
+    for seed in range(seed_count):
+        rng = random.Random(seed)
+        ids = rng.sample(range(1, 2000), 60)
+        tree = build(AVLTree(), ids)
+        node_of = {node.key.event_id: node for node in tree.inorder()}
+        for event_id in rng.sample(ids, 40):
+            tree.remove(EventKey(1, 30, event_id))
+            assert tree.is_balanced()
+            for node in tree.inorder():
+                assert node is node_of[node.key.event_id]
+                assert node.event == node.key.event_id

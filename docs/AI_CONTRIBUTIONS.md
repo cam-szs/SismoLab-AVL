@@ -176,3 +176,12 @@ This project was primarily developed by the student team. The AI assistant suppo
 - **Result:** the 3-second state polling no longer clears action errors (connection errors use their own state); action results appear as fixed toasts that stay until dismissed; backend messages are translated in one place before display, keeping the English API contract and its tests unchanged; added a favicon.
 - **Human review required:** check the wording of the translated messages.
 - **Owner for understanding:** all three teammates.
+
+## Deletion with the in-order predecessor; typed clock hours
+
+- **Date:** 2026-10-06
+- **Scope:** `domain/bst.py`, `tests/test_avl_tree.py`, `frontend/src/components/ClockControls.jsx`, `frontend/src/App.jsx`, `frontend/src/App.test.jsx`, `frontend/src/styles.css`.
+- **Request:** when a node with two children is deleted, replace it with its in-order predecessor; advance the clock with a typed number of hours instead of fixed buttons.
+- **Result:** `BSTree._delete` (shared by the AVL) detaches the largest node of the left subtree with `_detach_max`, rebalancing that path, and relinks it in place of the deleted node instead of copying key and event, so every node keeps its own event; tests cover the root case, a deep predecessor, a deletion that triggers a rotation, the plain BST and random deletions. The clock panel shows the current simulation time and an hours field.
+- **Human review required:** trace one two-children deletion by hand, including the rebalancing of the predecessor's path.
+- **Owner for understanding:** Jeronimo.
