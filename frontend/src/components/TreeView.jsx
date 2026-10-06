@@ -58,8 +58,9 @@ export default function TreeView({ root, tone = "avl", onSelect, depthLimit = nu
     <svg
       className={`tree-svg tree-${tone}`}
       viewBox={`0 0 ${width} ${height}`}
-      width={width}
-      height={height}
+      // Shrinks to fit the panel down to a readable minimum; wider trees
+      // (e.g. a degenerate BST) keep scrolling inside the panel.
+      style={{ width: "100%", maxWidth: width, minWidth: Math.min(width, 560), height: "auto" }}
       role="img"
     >
       {edges.map(([from, to], index) => {

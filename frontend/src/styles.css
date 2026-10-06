@@ -1479,3 +1479,8 @@ h2 {
   letter-spacing: 0.04em;
   color: rgba(238, 244, 237, 0.62);
 }
+
+/* AVL above BST, each with the full width of the card. */
+.tree-compare {
+  grid-template-columns: 1fr;
+}
