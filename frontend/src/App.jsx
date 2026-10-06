@@ -524,6 +524,7 @@ const ACTION_LABELS = {
   "change execution mode": "Cambiar modo",
   "change scenario parameters": "Cambiar parámetros",
   "advance simulation clock": "Avanzar reloj",
+  "load report burst": "Cargar ráfaga",
   "load JSON": "Cargar JSON",
   "load JSON from path": "Cargar JSON",
   "save version": "Guardar versión",
