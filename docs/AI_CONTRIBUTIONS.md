@@ -194,3 +194,12 @@ This project was primarily developed by the student team. The AI assistant suppo
 - **Result:** one file per case (insertion loads, report bursts and an exported topology), a Spanish evidence document whose obtained results come from running the application, and tests that re-check every expected result.
 - **Human review required:** run each case once in the UI following the document before the demo.
 - **Owner for understanding:** all three teammates.
+
+## Run instructions and defense guide
+
+- **Date:** 2026-10-06
+- **Scope:** `README.md`, `docs/DEFENSE_GUIDE.md`, `.gitignore`.
+- **Request:** update the execution instructions (they only covered Windows) and the defense guide to the current application.
+- **Result:** the README covers requirements, installation and execution on macOS/Linux and Windows, tests, sample files, modes and parameters, and the repository layout; the defense guide follows the sample files case by case and maps every requirement to its tests; `.venv/` is ignored.
+- **Human review required:** follow the README on a clean machine (Windows included) before the submission.
+- **Owner for understanding:** all three teammates.
