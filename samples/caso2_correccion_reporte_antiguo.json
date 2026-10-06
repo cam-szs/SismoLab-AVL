@@ -1,0 +1,41 @@
+{
+  "description": "Section 16, case 2 (report burst). Event 220 arrives with M=4.8, H=70.0 (priority 2), then revision 2 corrects it to M=6.2, H=15.0 (priority 3, key changes, node reinserted), then an older revision 1 arrives: it is discarded as stale, no second node is created and the correction is kept.",
+  "reports": [
+    {
+      "event_id": 220,
+      "magnitude": 4.8,
+      "depth_km": 70.0,
+      "epicenter": {
+        "x": 420.0,
+        "y": 380.0
+      },
+      "occurred_at": "2026-10-04T10:00:00Z",
+      "station": "ST-1",
+      "revision": 1
+    },
+    {
+      "event_id": 220,
+      "magnitude": 6.2,
+      "depth_km": 15.0,
+      "epicenter": {
+        "x": 420.0,
+        "y": 380.0
+      },
+      "occurred_at": "2026-10-04T10:00:00Z",
+      "station": "ST-2",
+      "revision": 2
+    },
+    {
+      "event_id": 220,
+      "magnitude": 4.8,
+      "depth_km": 70.0,
+      "epicenter": {
+        "x": 420.0,
+        "y": 380.0
+      },
+      "occurred_at": "2026-10-04T10:00:00Z",
+      "station": "ST-3",
+      "revision": 1
+    }
+  ]
+}

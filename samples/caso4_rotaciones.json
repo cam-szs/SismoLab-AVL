@@ -1,0 +1,83 @@
+{
+  "description": "Section 16, case 4 (insertion load). Seven low-priority events whose insertion order triggers exactly one case of each type, in this order: LL (inserting 403), RL (inserting 405), LR (inserting 406), RR (inserting 407). For differences greater than 2 and recovery use topologia_estres.json.",
+  "simulation_time": "2026-10-05T12:00:00Z",
+  "events": [
+    {
+      "id": 401,
+      "magnitude": 2.8,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 150.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T10:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 402,
+      "magnitude": 2.7,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 170.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T11:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 403,
+      "magnitude": 1.2,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 190.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T12:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 404,
+      "magnitude": 2.4,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 210.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T13:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 405,
+      "magnitude": 1.5,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 230.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T14:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 406,
+      "magnitude": 2.1,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 250.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T15:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 407,
+      "magnitude": 2.9,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 270.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T16:00:00Z",
+      "station": "ST-5"
+    }
+  ]
+}

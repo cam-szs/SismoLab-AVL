@@ -185,3 +185,12 @@ This project was primarily developed by the student team. The AI assistant suppo
 - **Result:** `BSTree._delete` (shared by the AVL) detaches the largest node of the left subtree with `_detach_max`, rebalancing that path, and relinks it in place of the deleted node instead of copying key and event, so every node keeps its own event; tests cover the root case, a deep predecessor, a deletion that triggers a rotation, the plain BST and random deletions. The clock panel shows the current simulation time and an hours field.
 - **Human review required:** trace one two-children deletion by hand, including the rebalancing of the predecessor's path.
 - **Owner for understanding:** Jeronimo.
+
+## Section 16 evidence
+
+- **Date:** 2026-10-06
+- **Scope:** `samples/caso1_limites_empates.json` to `samples/caso5_archivo_masivo.json`, `tests/test_section16_cases.py`, `docs/CASOS_SECCION_16.md`, `docs/DEMO_CASES.md`.
+- **Request:** prepare reproducible data, initial state and expected vs obtained results for every minimum case of section 16.
+- **Result:** one file per case (insertion loads, report bursts and an exported topology), a Spanish evidence document whose obtained results come from running the application, and tests that re-check every expected result.
+- **Human review required:** run each case once in the UI following the document before the demo.
+- **Owner for understanding:** all three teammates.

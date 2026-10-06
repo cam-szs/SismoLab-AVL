@@ -1,0 +1,41 @@
+{
+  "description": "Section 16, case 3 (report burst). Nearby events: M=5.6 at 10:00 and M=4.2 at 10:20, then a late report of M=6.1 that occurred at 09:55. Policy: among candidates (larger magnitude, strictly earlier, within W hours and R km) choose the largest magnitude, then the closest in time, then the closest in distance, then the smallest id.",
+  "reports": [
+    {
+      "event_id": 301,
+      "magnitude": 5.6,
+      "depth_km": 12.0,
+      "epicenter": {
+        "x": 100.0,
+        "y": 800.0
+      },
+      "occurred_at": "2026-10-04T10:00:00Z",
+      "station": "ST-5",
+      "revision": 1
+    },
+    {
+      "event_id": 302,
+      "magnitude": 4.2,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 110.0,
+        "y": 806.0
+      },
+      "occurred_at": "2026-10-04T10:20:00Z",
+      "station": "ST-5",
+      "revision": 1
+    },
+    {
+      "event_id": 303,
+      "magnitude": 6.1,
+      "depth_km": 15.0,
+      "epicenter": {
+        "x": 104.0,
+        "y": 797.0
+      },
+      "occurred_at": "2026-10-04T09:55:00Z",
+      "station": "ST-1",
+      "revision": 1
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "description": "Section 16, case 1 (insertion load). Limits: M=4.5 and H=30.0 on the shared border x=500 of a populated and an unpopulated zone (priority 3); same data outside any populated zone (2); H=30.1 in a populated zone (2); M=6.0 anywhere (3); M=4.4 in a populated zone (1). Ties: events 405 and 410 share P=2 and M=4.8, so the id decides (405 < 410).",
+  "simulation_time": "2026-10-05T12:00:00Z",
+  "events": [
+    {
+      "id": 401,
+      "magnitude": 4.5,
+      "depth_km": 30.0,
+      "epicenter": {
+        "x": 500.0,
+        "y": 400.0
+      },
+      "occurred_at": "2026-10-04T08:00:00Z",
+      "station": "ST-1"
+    },
+    {
+      "id": 402,
+      "magnitude": 4.5,
+      "depth_km": 30.0,
+      "epicenter": {
+        "x": 600.0,
+        "y": 400.0
+      },
+      "occurred_at": "2026-10-04T08:10:00Z",
+      "station": "ST-2"
+    },
+    {
+      "id": 403,
+      "magnitude": 4.5,
+      "depth_km": 30.1,
+      "epicenter": {
+        "x": 400.0,
+        "y": 400.0
+      },
+      "occurred_at": "2026-10-04T08:20:00Z",
+      "station": "ST-1"
+    },
+    {
+      "id": 404,
+      "magnitude": 6.0,
+      "depth_km": 300.0,
+      "epicenter": {
+        "x": 150.0,
+        "y": 900.0
+      },
+      "occurred_at": "2026-10-04T08:30:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 406,
+      "magnitude": 4.4,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 350.0,
+        "y": 350.0
+      },
+      "occurred_at": "2026-10-04T08:40:00Z",
+      "station": "ST-1"
+    },
+    {
+      "id": 410,
+      "magnitude": 4.8,
+      "depth_km": 60.0,
+      "epicenter": {
+        "x": 620.0,
+        "y": 380.0
+      },
+      "occurred_at": "2026-10-04T08:50:00Z",
+      "station": "ST-2"
+    },
+    {
+      "id": 405,
+      "magnitude": 4.8,
+      "depth_km": 60.0,
+      "epicenter": {
+        "x": 640.0,
+        "y": 390.0
+      },
+      "occurred_at": "2026-10-04T09:00:00Z",
+      "station": "ST-2"
+    }
+  ]
+}

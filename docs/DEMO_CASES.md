@@ -1,5 +1,9 @@
 # Demonstration cases
 
+> Reproducible data files, expected and obtained results for each case: see
+> `docs/CASOS_SECCION_16.md` and the files in `samples/` (checked by
+> `tests/test_section16_cases.py`).
+
 These cases map the minimum demonstrations from section 16 of the project
 specification to the current application.
 
