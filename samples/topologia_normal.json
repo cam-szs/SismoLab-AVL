@@ -1,0 +1,805 @@
+{
+  "description": "Topology load, normal mode: a balanced AVL with 8 events (one reviewed) and one report waiting in the queue. Heights, balance factors and priorities are stored and verified on load.",
+  "mode": "normal",
+  "parameters": {
+    "W": 48.0,
+    "R": 40.0,
+    "L": 3,
+    "T": 72.0
+  },
+  "clock": 0,
+  "simulation_time": "2026-10-05T12:00:00Z",
+  "events": [
+    {
+      "id": 150,
+      "magnitude": 2.4,
+      "depth_km": 8.0,
+      "epicenter": {
+        "x": 500.0,
+        "y": 150.0
+      },
+      "occurred_at": "2026-10-03T12:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-4"
+      ],
+      "status": "reviewed",
+      "populated_zone": false,
+      "priority": 1
+    },
+    {
+      "id": 140,
+      "magnitude": 3.2,
+      "depth_km": 12.0,
+      "epicenter": {
+        "x": 120.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-03T08:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-5"
+      ],
+      "status": "pending",
+      "populated_zone": false,
+      "priority": 1
+    },
+    {
+      "id": 170,
+      "magnitude": 3.9,
+      "depth_km": 15.0,
+      "epicenter": {
+        "x": 300.0,
+        "y": 600.0
+      },
+      "occurred_at": "2026-10-03T14:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-5"
+      ],
+      "status": "pending",
+      "populated_zone": false,
+      "priority": 1
+    },
+    {
+      "id": 110,
+      "magnitude": 4.9,
+      "depth_km": 60.0,
+      "epicenter": {
+        "x": 610.0,
+        "y": 420.0
+      },
+      "occurred_at": "2026-10-03T11:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-2"
+      ],
+      "status": "pending",
+      "populated_zone": false,
+      "priority": 2
+    },
+    {
+      "id": 125,
+      "magnitude": 5.1,
+      "depth_km": 40.0,
+      "epicenter": {
+        "x": 450.0,
+        "y": 350.0
+      },
+      "occurred_at": "2026-10-03T13:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-1"
+      ],
+      "status": "pending",
+      "populated_zone": true,
+      "priority": 2
+    },
+    {
+      "id": 115,
+      "magnitude": 4.5,
+      "depth_km": 30.0,
+      "epicenter": {
+        "x": 500.0,
+        "y": 400.0
+      },
+      "occurred_at": "2026-10-03T15:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-1"
+      ],
+      "status": "pending",
+      "populated_zone": true,
+      "priority": 3
+    },
+    {
+      "id": 160,
+      "magnitude": 4.7,
+      "depth_km": 25.0,
+      "epicenter": {
+        "x": 420.0,
+        "y": 400.0
+      },
+      "occurred_at": "2026-10-03T10:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-1"
+      ],
+      "status": "pending",
+      "populated_zone": true,
+      "priority": 3
+    },
+    {
+      "id": 105,
+      "magnitude": 6.3,
+      "depth_km": 18.0,
+      "epicenter": {
+        "x": 780.0,
+        "y": 820.0
+      },
+      "occurred_at": "2026-10-03T09:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-3"
+      ],
+      "status": "pending",
+      "populated_zone": true,
+      "priority": 3
+    }
+  ],
+  "queue": [
+    {
+      "id": 180,
+      "magnitude": 4.1,
+      "depth_km": 9.0,
+      "epicenter": {
+        "x": 700.0,
+        "y": 300.0
+      },
+      "occurred_at": "2026-10-05T11:00:00Z",
+      "station": "ST-2",
+      "revision": 1,
+      "event_id": 180
+    }
+  ],
+  "history": {
+    "archived": [],
+    "deleted": []
+  },
+  "metrics": {
+    "active": 8,
+    "archived": 0,
+    "deleted": 0,
+    "pending": 1,
+    "pending_attention": 7,
+    "by_priority": {
+      "1": 3,
+      "2": 2,
+      "3": 3
+    },
+    "expensive_access": 0,
+    "avl": {
+      "size": 8,
+      "height": 3,
+      "leaves": 4,
+      "balanced": true,
+      "stress_mode": false,
+      "rotations": 4,
+      "rotation_counts": {
+        "LL": 0,
+        "RR": 0,
+        "LR": 1,
+        "RL": 1,
+        "rotate_left": 2,
+        "rotate_right": 2
+      },
+      "depths": {
+        "110": 0,
+        "140": 1,
+        "160": 1,
+        "150": 2,
+        "170": 2,
+        "125": 2,
+        "105": 2,
+        "115": 3
+      }
+    },
+    "bst": {
+      "size": 8,
+      "height": 5,
+      "leaves": 3
+    },
+    "processing": {
+      "created": 8,
+      "corrections": 0,
+      "confirmations": 0,
+      "conflicts": 0,
+      "stale": 0,
+      "rejected_deleted": 0,
+      "recoveries": 0,
+      "deletions": 0,
+      "archive_operations": 0,
+      "archived_events": 0
+    },
+    "indicators": {
+      "accepted_corrections": 0,
+      "discarded_reports": 0,
+      "conflicts": 0,
+      "archive_operations": 0,
+      "archived_events": 0
+    }
+  },
+  "avl": {
+    "key": {
+      "priority": 2,
+      "magnitude_tenths": 49,
+      "event_id": 110
+    },
+    "event": {
+      "id": 110,
+      "magnitude": 4.9,
+      "depth_km": 60.0,
+      "epicenter": {
+        "x": 610.0,
+        "y": 420.0
+      },
+      "occurred_at": "2026-10-03T11:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-2"
+      ],
+      "status": "pending",
+      "populated_zone": false,
+      "priority": 2
+    },
+    "height": 3,
+    "factor_balanceo": -1,
+    "izquierdo": {
+      "key": {
+        "priority": 1,
+        "magnitude_tenths": 32,
+        "event_id": 140
+      },
+      "event": {
+        "id": 140,
+        "magnitude": 3.2,
+        "depth_km": 12.0,
+        "epicenter": {
+          "x": 120.0,
+          "y": 880.0
+        },
+        "occurred_at": "2026-10-03T08:00:00Z",
+        "revision": 1,
+        "stations": [
+          "ST-5"
+        ],
+        "status": "pending",
+        "populated_zone": false,
+        "priority": 1
+      },
+      "height": 1,
+      "factor_balanceo": 0,
+      "izquierdo": {
+        "key": {
+          "priority": 1,
+          "magnitude_tenths": 24,
+          "event_id": 150
+        },
+        "event": {
+          "id": 150,
+          "magnitude": 2.4,
+          "depth_km": 8.0,
+          "epicenter": {
+            "x": 500.0,
+            "y": 150.0
+          },
+          "occurred_at": "2026-10-03T12:00:00Z",
+          "revision": 1,
+          "stations": [
+            "ST-4"
+          ],
+          "status": "reviewed",
+          "populated_zone": false,
+          "priority": 1
+        },
+        "height": 0,
+        "factor_balanceo": 0,
+        "izquierdo": null,
+        "derecho": null
+      },
+      "derecho": {
+        "key": {
+          "priority": 1,
+          "magnitude_tenths": 39,
+          "event_id": 170
+        },
+        "event": {
+          "id": 170,
+          "magnitude": 3.9,
+          "depth_km": 15.0,
+          "epicenter": {
+            "x": 300.0,
+            "y": 600.0
+          },
+          "occurred_at": "2026-10-03T14:00:00Z",
+          "revision": 1,
+          "stations": [
+            "ST-5"
+          ],
+          "status": "pending",
+          "populated_zone": false,
+          "priority": 1
+        },
+        "height": 0,
+        "factor_balanceo": 0,
+        "izquierdo": null,
+        "derecho": null
+      }
+    },
+    "derecho": {
+      "key": {
+        "priority": 3,
+        "magnitude_tenths": 47,
+        "event_id": 160
+      },
+      "event": {
+        "id": 160,
+        "magnitude": 4.7,
+        "depth_km": 25.0,
+        "epicenter": {
+          "x": 420.0,
+          "y": 400.0
+        },
+        "occurred_at": "2026-10-03T10:00:00Z",
+        "revision": 1,
+        "stations": [
+          "ST-1"
+        ],
+        "status": "pending",
+        "populated_zone": true,
+        "priority": 3
+      },
+      "height": 2,
+      "factor_balanceo": 1,
+      "izquierdo": {
+        "key": {
+          "priority": 2,
+          "magnitude_tenths": 51,
+          "event_id": 125
+        },
+        "event": {
+          "id": 125,
+          "magnitude": 5.1,
+          "depth_km": 40.0,
+          "epicenter": {
+            "x": 450.0,
+            "y": 350.0
+          },
+          "occurred_at": "2026-10-03T13:00:00Z",
+          "revision": 1,
+          "stations": [
+            "ST-1"
+          ],
+          "status": "pending",
+          "populated_zone": true,
+          "priority": 2
+        },
+        "height": 1,
+        "factor_balanceo": -1,
+        "izquierdo": null,
+        "derecho": {
+          "key": {
+            "priority": 3,
+            "magnitude_tenths": 45,
+            "event_id": 115
+          },
+          "event": {
+            "id": 115,
+            "magnitude": 4.5,
+            "depth_km": 30.0,
+            "epicenter": {
+              "x": 500.0,
+              "y": 400.0
+            },
+            "occurred_at": "2026-10-03T15:00:00Z",
+            "revision": 1,
+            "stations": [
+              "ST-1"
+            ],
+            "status": "pending",
+            "populated_zone": true,
+            "priority": 3
+          },
+          "height": 0,
+          "factor_balanceo": 0,
+          "izquierdo": null,
+          "derecho": null
+        }
+      },
+      "derecho": {
+        "key": {
+          "priority": 3,
+          "magnitude_tenths": 63,
+          "event_id": 105
+        },
+        "event": {
+          "id": 105,
+          "magnitude": 6.3,
+          "depth_km": 18.0,
+          "epicenter": {
+            "x": 780.0,
+            "y": 820.0
+          },
+          "occurred_at": "2026-10-03T09:00:00Z",
+          "revision": 1,
+          "stations": [
+            "ST-3"
+          ],
+          "status": "pending",
+          "populated_zone": true,
+          "priority": 3
+        },
+        "height": 0,
+        "factor_balanceo": 0,
+        "izquierdo": null,
+        "derecho": null
+      }
+    }
+  },
+  "bst": {
+    "key": {
+      "priority": 1,
+      "magnitude_tenths": 32,
+      "event_id": 140
+    },
+    "event": {
+      "id": 140,
+      "magnitude": 3.2,
+      "depth_km": 12.0,
+      "epicenter": {
+        "x": 120.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-03T08:00:00Z",
+      "revision": 1,
+      "stations": [
+        "ST-5"
+      ],
+      "status": "pending",
+      "populated_zone": false,
+      "priority": 1
+    },
+    "height": 5,
+    "factor_balanceo": -4,
+    "izquierdo": {
+      "key": {
+        "priority": 1,
+        "magnitude_tenths": 24,
+        "event_id": 150
+      },
+      "event": {
+        "id": 150,
+        "magnitude": 2.4,
+        "depth_km": 8.0,
+        "epicenter": {
+          "x": 500.0,
+          "y": 150.0
+        },
+        "occurred_at": "2026-10-03T12:00:00Z",
+        "revision": 1,
+        "stations": [
+          "ST-4"
+        ],
+        "status": "reviewed",
+        "populated_zone": false,
+        "priority": 1
+      },
+      "height": 0,
+      "factor_balanceo": 0,
+      "izquierdo": null,
+      "derecho": null
+    },
+    "derecho": {
+      "key": {
+        "priority": 3,
+        "magnitude_tenths": 63,
+        "event_id": 105
+      },
+      "event": {
+        "id": 105,
+        "magnitude": 6.3,
+        "depth_km": 18.0,
+        "epicenter": {
+          "x": 780.0,
+          "y": 820.0
+        },
+        "occurred_at": "2026-10-03T09:00:00Z",
+        "revision": 1,
+        "stations": [
+          "ST-3"
+        ],
+        "status": "pending",
+        "populated_zone": true,
+        "priority": 3
+      },
+      "height": 4,
+      "factor_balanceo": 4,
+      "izquierdo": {
+        "key": {
+          "priority": 3,
+          "magnitude_tenths": 47,
+          "event_id": 160
+        },
+        "event": {
+          "id": 160,
+          "magnitude": 4.7,
+          "depth_km": 25.0,
+          "epicenter": {
+            "x": 420.0,
+            "y": 400.0
+          },
+          "occurred_at": "2026-10-03T10:00:00Z",
+          "revision": 1,
+          "stations": [
+            "ST-1"
+          ],
+          "status": "pending",
+          "populated_zone": true,
+          "priority": 3
+        },
+        "height": 3,
+        "factor_balanceo": 3,
+        "izquierdo": {
+          "key": {
+            "priority": 2,
+            "magnitude_tenths": 49,
+            "event_id": 110
+          },
+          "event": {
+            "id": 110,
+            "magnitude": 4.9,
+            "depth_km": 60.0,
+            "epicenter": {
+              "x": 610.0,
+              "y": 420.0
+            },
+            "occurred_at": "2026-10-03T11:00:00Z",
+            "revision": 1,
+            "stations": [
+              "ST-2"
+            ],
+            "status": "pending",
+            "populated_zone": false,
+            "priority": 2
+          },
+          "height": 2,
+          "factor_balanceo": -1,
+          "izquierdo": {
+            "key": {
+              "priority": 1,
+              "magnitude_tenths": 39,
+              "event_id": 170
+            },
+            "event": {
+              "id": 170,
+              "magnitude": 3.9,
+              "depth_km": 15.0,
+              "epicenter": {
+                "x": 300.0,
+                "y": 600.0
+              },
+              "occurred_at": "2026-10-03T14:00:00Z",
+              "revision": 1,
+              "stations": [
+                "ST-5"
+              ],
+              "status": "pending",
+              "populated_zone": false,
+              "priority": 1
+            },
+            "height": 0,
+            "factor_balanceo": 0,
+            "izquierdo": null,
+            "derecho": null
+          },
+          "derecho": {
+            "key": {
+              "priority": 2,
+              "magnitude_tenths": 51,
+              "event_id": 125
+            },
+            "event": {
+              "id": 125,
+              "magnitude": 5.1,
+              "depth_km": 40.0,
+              "epicenter": {
+                "x": 450.0,
+                "y": 350.0
+              },
+              "occurred_at": "2026-10-03T13:00:00Z",
+              "revision": 1,
+              "stations": [
+                "ST-1"
+              ],
+              "status": "pending",
+              "populated_zone": true,
+              "priority": 2
+            },
+            "height": 1,
+            "factor_balanceo": -1,
+            "izquierdo": null,
+            "derecho": {
+              "key": {
+                "priority": 3,
+                "magnitude_tenths": 45,
+                "event_id": 115
+              },
+              "event": {
+                "id": 115,
+                "magnitude": 4.5,
+                "depth_km": 30.0,
+                "epicenter": {
+                  "x": 500.0,
+                  "y": 400.0
+                },
+                "occurred_at": "2026-10-03T15:00:00Z",
+                "revision": 1,
+                "stations": [
+                  "ST-1"
+                ],
+                "status": "pending",
+                "populated_zone": true,
+                "priority": 3
+              },
+              "height": 0,
+              "factor_balanceo": 0,
+              "izquierdo": null,
+              "derecho": null
+            }
+          }
+        },
+        "derecho": null
+      },
+      "derecho": null
+    }
+  },
+  "counters": {
+    "stats": {
+      "created": 8,
+      "corrections": 0,
+      "confirmations": 0,
+      "conflicts": 0,
+      "stale": 0,
+      "rejected_deleted": 0,
+      "recoveries": 0,
+      "deletions": 0,
+      "archive_operations": 0,
+      "archived_events": 0
+    },
+    "rotations": {
+      "LL": 0,
+      "RR": 0,
+      "LR": 1,
+      "RL": 1,
+      "rotate_left": 2,
+      "rotate_right": 2
+    }
+  },
+  "traversals": {
+    "inorder": [
+      150,
+      140,
+      170,
+      110,
+      125,
+      115,
+      160,
+      105
+    ],
+    "preorder": [
+      110,
+      140,
+      150,
+      170,
+      160,
+      125,
+      115,
+      105
+    ],
+    "postorder": [
+      150,
+      170,
+      140,
+      115,
+      125,
+      105,
+      160,
+      110
+    ],
+    "level_order": [
+      110,
+      140,
+      160,
+      150,
+      170,
+      125,
+      105,
+      115
+    ]
+  },
+  "scenario": {
+    "mode": "normal",
+    "clock": 0,
+    "simulation_time": "2026-10-05T12:00:00Z",
+    "parameters": {
+      "W": 48.0,
+      "R": 40.0,
+      "L": 3,
+      "T": 72.0
+    },
+    "values": {},
+    "zones": [
+      {
+        "name": "Valle Central",
+        "x_min": 300.0,
+        "x_max": 500.0,
+        "y_min": 300.0,
+        "y_max": 500.0,
+        "populated": true
+      },
+      {
+        "name": "Sierra Alta",
+        "x_min": 500.0,
+        "x_max": 700.0,
+        "y_min": 300.0,
+        "y_max": 500.0,
+        "populated": false
+      },
+      {
+        "name": "Puerto Norte",
+        "x_min": 650.0,
+        "x_max": 900.0,
+        "y_min": 700.0,
+        "y_max": 950.0,
+        "populated": true
+      },
+      {
+        "name": "Desierto Sur",
+        "x_min": 100.0,
+        "x_max": 900.0,
+        "y_min": 50.0,
+        "y_max": 250.0,
+        "populated": false
+      }
+    ],
+    "stations": [
+      {
+        "code": "ST-1",
+        "x_km": 400.0,
+        "y_km": 420.0
+      },
+      {
+        "code": "ST-2",
+        "x_km": 620.0,
+        "y_km": 380.0
+      },
+      {
+        "code": "ST-3",
+        "x_km": 780.0,
+        "y_km": 820.0
+      },
+      {
+        "code": "ST-4",
+        "x_km": 500.0,
+        "y_km": 150.0
+      },
+      {
+        "code": "ST-5",
+        "x_km": 150.0,
+        "y_km": 850.0
+      }
+    ]
+  },
+  "associations": [],
+  "association_count": 0
+}

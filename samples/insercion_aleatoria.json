@@ -1,0 +1,116 @@
+{
+  "description": "Insertion load: 10 events in mixed order with every priority, zone-border limit cases and a (P, M) tie broken by id. The AVL balances with rotations; the BST keeps the arrival shape.",
+  "simulation_time": "2026-10-05T12:00:00Z",
+  "events": [
+    {
+      "id": 140,
+      "magnitude": 3.2,
+      "depth_km": 12.0,
+      "epicenter": {
+        "x": 120.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-03T08:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 105,
+      "magnitude": 6.3,
+      "depth_km": 18.0,
+      "epicenter": {
+        "x": 780.0,
+        "y": 820.0
+      },
+      "occurred_at": "2026-10-03T09:00:00Z",
+      "station": "ST-3"
+    },
+    {
+      "id": 160,
+      "magnitude": 4.7,
+      "depth_km": 25.0,
+      "epicenter": {
+        "x": 420.0,
+        "y": 400.0
+      },
+      "occurred_at": "2026-10-03T10:00:00Z",
+      "station": "ST-1"
+    },
+    {
+      "id": 110,
+      "magnitude": 4.9,
+      "depth_km": 60.0,
+      "epicenter": {
+        "x": 610.0,
+        "y": 420.0
+      },
+      "occurred_at": "2026-10-03T11:00:00Z",
+      "station": "ST-2"
+    },
+    {
+      "id": 150,
+      "magnitude": 2.4,
+      "depth_km": 8.0,
+      "epicenter": {
+        "x": 500.0,
+        "y": 150.0
+      },
+      "occurred_at": "2026-10-03T12:00:00Z",
+      "station": "ST-4"
+    },
+    {
+      "id": 125,
+      "magnitude": 5.1,
+      "depth_km": 40.0,
+      "epicenter": {
+        "x": 450.0,
+        "y": 350.0
+      },
+      "occurred_at": "2026-10-03T13:00:00Z",
+      "station": "ST-1"
+    },
+    {
+      "id": 170,
+      "magnitude": 3.9,
+      "depth_km": 15.0,
+      "epicenter": {
+        "x": 300.0,
+        "y": 600.0
+      },
+      "occurred_at": "2026-10-03T14:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 115,
+      "magnitude": 4.5,
+      "depth_km": 30.0,
+      "epicenter": {
+        "x": 500.0,
+        "y": 400.0
+      },
+      "occurred_at": "2026-10-03T15:00:00Z",
+      "station": "ST-1"
+    },
+    {
+      "id": 130,
+      "magnitude": 4.5,
+      "depth_km": 30.0,
+      "epicenter": {
+        "x": 600.0,
+        "y": 400.0
+      },
+      "occurred_at": "2026-10-03T16:00:00Z",
+      "station": "ST-2"
+    },
+    {
+      "id": 135,
+      "magnitude": 4.5,
+      "depth_km": 30.0,
+      "epicenter": {
+        "x": 650.0,
+        "y": 450.0
+      },
+      "occurred_at": "2026-10-03T17:00:00Z",
+      "station": "ST-2"
+    }
+  ]
+}

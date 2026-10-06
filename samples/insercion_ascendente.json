@@ -1,0 +1,138 @@
+{
+  "description": "Insertion load in ascending K order (12 low-priority events, the last four tie on (P, M) and are ordered by id). The BST degenerates into a chain of height 11; the AVL stays at height 3 thanks to RR rotations.",
+  "simulation_time": "2026-10-05T12:00:00Z",
+  "events": [
+    {
+      "id": 200,
+      "magnitude": 1.2,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 100.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T00:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 201,
+      "magnitude": 1.8,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 120.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T01:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 202,
+      "magnitude": 2.3,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 140.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T02:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 203,
+      "magnitude": 2.7,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 160.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T03:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 204,
+      "magnitude": 3.1,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 180.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T04:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 205,
+      "magnitude": 3.5,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 200.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T05:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 206,
+      "magnitude": 3.9,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 220.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T06:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 207,
+      "magnitude": 4.2,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 240.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T07:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 208,
+      "magnitude": 4.4,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 260.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T08:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 209,
+      "magnitude": 4.4,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 280.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T09:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 210,
+      "magnitude": 4.4,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 300.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T10:00:00Z",
+      "station": "ST-5"
+    },
+    {
+      "id": 211,
+      "magnitude": 4.4,
+      "depth_km": 10.0,
+      "epicenter": {
+        "x": 320.0,
+        "y": 880.0
+      },
+      "occurred_at": "2026-10-04T11:00:00Z",
+      "station": "ST-5"
+    }
+  ]
+}
