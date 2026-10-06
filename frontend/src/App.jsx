@@ -226,7 +226,7 @@ function MapPanel({ zones, mapPoints, associations, openEvent }) {
   );
 }
 
-function QueuePanel({ form, handleInputChange, submitReport, processNextReport, queueItems, action, autoProcess, setAutoProcess, stepDelay, setStepDelay, stations }) {
+function QueuePanel({ form, handleInputChange, submitReport, processNextReport, queueItems, action, autoProcess, setAutoProcess, stepDelay, setStepDelay, stations, loadBurstFile }) {
   return (
     <article className="workspace-card queue-card">
       <SectionHeader index="03" label="RECEPCIÓN" title="FIFO" />
@@ -265,6 +265,10 @@ function QueuePanel({ form, handleInputChange, submitReport, processNextReport, 
         </div>
         <button className="submit-report" type="submit">Encolar reporte</button>
       </form>
+      <label className="action-button secondary file-action burst-action">
+        {action === "load-burst" ? "Cargando..." : "Cargar ráfaga JSON"}
+        <input type="file" accept="application/json,.json" onChange={loadBurstFile} disabled={Boolean(action)} />
+      </label>
 
       <button className="process-report" type="button" onClick={processNextReport} disabled={Boolean(action) || autoProcess}>
         Procesar siguiente reporte
@@ -306,6 +310,8 @@ function QueuePanel({ form, handleInputChange, submitReport, processNextReport, 
               station={item.station}
               magnitude={item.magnitude}
               depth={item.depth_km}
+              revision={item.revision}
+              position={index + 1}
             />
           ))
         )}
@@ -757,6 +763,7 @@ export default function App() {
     actions,
     comparison,
     loadComparison,
+    loadBurstFile,
     autoProcess,
     setAutoProcess,
     stepDelay,
@@ -859,6 +866,7 @@ export default function App() {
             stepDelay={stepDelay}
             setStepDelay={setStepDelay}
             stations={stations}
+            loadBurstFile={loadBurstFile}
           />
         </div>
       </section>

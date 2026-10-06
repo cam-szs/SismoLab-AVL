@@ -1,0 +1,13 @@
+{
+  "description": "Burst from 4 stations: new events, a repeated confirmation, a key-changing correction, a stale report and a conflict. Process it one step at a time (section 8).",
+  "reports": [
+    {"event_id": 120, "magnitude": 4.8, "depth_km": 70.0, "epicenter": {"x": 420.0, "y": 380.0}, "occurred_at": "2026-10-01T10:00:00Z", "station": "ST-1", "revision": 1},
+    {"event_id": 121, "magnitude": 3.2, "depth_km": 12.0, "epicenter": {"x": 610.0, "y": 410.0}, "occurred_at": "2026-10-01T10:05:00Z", "station": "ST-2", "revision": 1},
+    {"event_id": 120, "magnitude": 4.8, "depth_km": 70.0, "epicenter": {"x": 420.0, "y": 380.0}, "occurred_at": "2026-10-01T10:00:00Z", "station": "ST-2", "revision": 1},
+    {"event_id": 120, "magnitude": 4.8, "depth_km": 70.0, "epicenter": {"x": 420.0, "y": 380.0}, "occurred_at": "2026-10-01T10:00:00Z", "station": "ST-2", "revision": 1},
+    {"event_id": 122, "magnitude": 6.1, "depth_km": 25.0, "epicenter": {"x": 780.0, "y": 820.0}, "occurred_at": "2026-10-01T10:20:00Z", "station": "ST-3", "revision": 1},
+    {"event_id": 120, "magnitude": 6.2, "depth_km": 15.0, "epicenter": {"x": 420.0, "y": 380.0}, "occurred_at": "2026-10-01T10:00:00Z", "station": "ST-1", "revision": 2},
+    {"event_id": 120, "magnitude": 4.8, "depth_km": 70.0, "epicenter": {"x": 420.0, "y": 380.0}, "occurred_at": "2026-10-01T10:00:00Z", "station": "ST-4", "revision": 1},
+    {"event_id": 121, "magnitude": 3.4, "depth_km": 12.0, "epicenter": {"x": 610.0, "y": 410.0}, "occurred_at": "2026-10-01T10:05:00Z", "station": "ST-4", "revision": 1}
+  ]
+}

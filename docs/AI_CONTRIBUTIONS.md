@@ -158,3 +158,12 @@ This project was primarily developed by the student team. The AI assistant suppo
 - **Result:** removed the fixed `data/scenario_state.json` path (export downloads the live state; server load/persist require a user-chosen path); append-only action log with the counters each action changed, shown in the UI; the AVL view marks expensive access with a ring separate from the priority colour and states when stress mode breaks the AVL condition; reports, manual creations and loaded files must use a station of the fixed scenario network (old API tests now use valid station codes); the UI no longer archives single events or reactivates archived ones by hand (only branch archival and newer revisions do); mode, parameter, clock and load actions push an undo step only when they succeed; leaving stress mode logs the recovery cost.
 - **Human review required:** confirm the decision to hide single-event archive/recover (the `/api/archive` and `/api/recover` endpoints remain for tests) and the action-log semantics.
 - **Owner for understanding:** all three teammates.
+
+## Report bursts loaded from a file
+
+- **Date:** 2026-10-06
+- **Scope:** `api/app.py`, `frontend/src/App.jsx`, `frontend/src/hooks/useScenarioState.js`, `frontend/src/components/QueueItem.jsx`, `frontend/src/styles.css`, `tests/test_counters_recovery.py`, `samples/rafaga_reportes.json`.
+- **Request:** let the user queue a burst of reports from N stations with a file chooser (section 8).
+- **Result:** `POST /api/queue/load` validates every report (ranges, station network, occurrence time) before queuing any, keeps file order, and counts as one undoable action in the action log; the queue panel has a "Cargar ráfaga JSON" button and shows revision and position; a sample burst covers new events, confirmations, a key-changing correction, a stale report and a conflict.
+- **Human review required:** check the burst JSON schema and the all-or-nothing validation.
+- **Owner for understanding:** all three teammates.

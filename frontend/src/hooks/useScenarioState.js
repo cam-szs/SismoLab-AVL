@@ -594,6 +594,34 @@ export function useScenarioState() {
     }
   };
 
+  // Queue a burst of reports from a file chosen by the user, in file order.
+  const loadBurstFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setAction("load-burst");
+    try {
+      const document = JSON.parse(await file.text());
+      const payload = await fetchJson(`${API_URL}/api/queue/load`, {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ document }),
+      });
+      setState(payload.state);
+      setNotice(
+        `Ráfaga encolada: ${payload.queued} reportes de ${payload.stations.length} estaciones ` +
+        `(${payload.stations.join(", ")}). Se procesan uno por paso.`
+      );
+      setError("");
+    } catch (reason) {
+      setError(reason instanceof SyntaxError
+        ? "El archivo no contiene JSON válido"
+        : reason.message || "No se pudo cargar la ráfaga");
+    } finally {
+      setAction("");
+    }
+  };
+
   const loadComparison = async () => {
     setAction("compare");
     try {
@@ -688,6 +716,7 @@ export function useScenarioState() {
     actions,
     comparison,
     loadComparison,
+    loadBurstFile,
     autoProcess,
     setAutoProcess,
     stepDelay,

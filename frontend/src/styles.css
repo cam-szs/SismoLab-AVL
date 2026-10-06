@@ -1300,3 +1300,9 @@ h2 {
     grid-template-columns: 30px minmax(0, 1fr);
   }
 }
+
+.burst-action {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}

@@ -836,6 +836,70 @@ def enqueue_report(payload: dict[str, Any]) -> dict[str, Any]:
     return {"queued": True, "report": report_payload}
 
 
+def _burst_report(item: Any, candidate_stations: dict[str, Any]) -> Report:
+    """Parse one report of a burst file; every field is required except revision."""
+    if not isinstance(item, dict):
+        raise ValueError("entries must be objects")
+    event_id = item.get("event_id", item.get("id"))
+    if isinstance(event_id, bool) or not isinstance(event_id, int):
+        raise ValueError("event id must be an integer")
+    epicenter = item.get("epicenter")
+    coordinates = epicenter if isinstance(epicenter, dict) else {"x": item.get("x_km"), "y": item.get("y_km")}
+    if item.get("occurred_at") in (None, ""):
+        raise ValueError("occurred_at is required")
+    revision = item.get("revision", 1)
+    if isinstance(revision, bool) or not isinstance(revision, int):
+        raise ValueError("revision must be an integer")
+    report = Report.create(
+        event_id=event_id,
+        magnitude=_number(item, "magnitude"),
+        depth_km=_number(item, "depth_km"),
+        x_km=_number(coordinates, "x"),
+        y_km=_number(coordinates, "y"),
+        occurred_at=_parse_utc(item["occurred_at"]),
+        station=str(item.get("station", "")),
+        revision=revision,
+    )
+    if report.occurred_at > SCENARIO.simulation_time:
+        raise ValueError("occurrence cannot be after the simulation clock")
+    _require_station(report.station, candidate_stations)
+    return report
+
+
+@app.post("/api/queue/load")
+def load_report_burst(payload: dict[str, Any]) -> dict[str, Any]:
+    """Enqueue a burst of reports from a user-chosen file, in file order.
+
+    Every report is validated first; if any is invalid nothing is queued and
+    the error names the offending entry. The whole burst is one undoable
+    action. Reports are only queued here: each one is resolved later by a
+    processing step (one report per step).
+    """
+    document = payload.get("document")
+    reports_payload = document.get("reports") if isinstance(document, dict) else document
+    if not isinstance(reports_payload, list) or not reports_payload:
+        raise ValueError("the burst file must contain a non-empty 'reports' array")
+    reports: list[Report] = []
+    for index, item in enumerate(reports_payload, start=1):
+        try:
+            reports.append(_burst_report(item, SCENARIO.stations))
+        except (ValueError, TypeError) as error:
+            label = item.get("event_id", item.get("id", "?")) if isinstance(item, dict) else "?"
+            raise ValueError(f"report {index} (event {label}): {error}") from error
+
+    snapshot = _capture_undo("load report burst")
+    before = _counter_totals()
+    for report in reports:
+        REPORT_QUEUE.enqueue(report)
+    UNDO_STACK.push(snapshot)
+    stations = sorted({report.station for report in reports})
+    _log_action(
+        "load report burst", before,
+        f"{len(reports)} report(s) from {len(stations)} station(s): {', '.join(stations)}",
+    )
+    return {"queued": len(reports), "stations": stations, "state": _public_state()}
+
+
 @app.post("/api/archive")
 def archive_event(payload: dict[str, Any]) -> dict[str, Any]:
     """Archive one active event and track it in history."""

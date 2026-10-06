@@ -376,3 +376,53 @@ def test_leaving_stress_mode_recovers_and_logs_the_cost(client: TestClient) -> N
     assert state["metrics"]["avl"]["balanced"] is True
     assert "global recovery applied" in state["actions"][0]["detail"]
     assert state["counters"]["stats"]["recoveries"] == 1
+
+
+# ---------- report bursts from a file ----------
+
+def burst(*entries):
+    base = {"magnitude": 3.0, "depth_km": 10.0, "epicenter": {"x": 50.0, "y": 900.0},
+            "occurred_at": "2026-09-10T10:00:00Z", "station": "ST-1"}
+    return {"reports": [{**base, **entry} for entry in entries]}
+
+
+def test_burst_is_queued_in_file_order_as_one_action(client: TestClient) -> None:
+    app_module.ACTION_LOG.clear()
+    document = burst(
+        {"event_id": 7, "station": "ST-2"},
+        {"event_id": 7, "station": "ST-3"},                       # confirmation
+        {"event_id": 7, "revision": 2, "magnitude": 6.5},         # correction that changes the key
+        {"event_id": 7, "revision": 1, "station": "ST-4"},        # stale
+    )
+
+    response = client.post("/api/queue/load", json={"document": document})
+
+    assert response.status_code == 200
+    state = response.json()["state"]
+    assert [(item["id"], item["station"], item["revision"]) for item in state["queue"]] == [
+        (7, "ST-2", 1), (7, "ST-3", 1), (7, "ST-1", 2), (7, "ST-4", 1),
+    ]
+    assert state["actions"][0]["delta"] == {"queue": 4}
+    decisions = [client.post("/api/queue/process").json()["result"]["decision"] for _ in range(4)]
+    assert decisions == ["created", "confirmed", "corrected", "stale"]
+
+    for _ in range(5):                       # four steps and the burst itself
+        client.post("/api/undo")
+    assert client.get("/api/state").json()["queue"] == []
+
+
+def test_invalid_burst_queues_nothing_and_names_the_entry(client: TestClient) -> None:
+    depth = len(app_module.UNDO_STACK)
+    document = burst({"event_id": 1}, {"event_id": 2, "station": "ST-99"}, {"event_id": 3})
+
+    response = client.post("/api/queue/load", json={"document": document})
+
+    assert response.status_code == 400
+    assert "report 2 (event 2)" in response.json()["error"]
+    assert client.get("/api/state").json()["queue"] == []
+    assert len(app_module.UNDO_STACK) == depth
+
+
+@pytest.mark.parametrize("document", [{}, {"reports": []}, burst({"event_id": 1, "occurred_at": ""})])
+def test_burst_requires_complete_reports(client: TestClient, document) -> None:
+    assert client.post("/api/queue/load", json={"document": document}).status_code == 400
