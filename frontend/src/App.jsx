@@ -33,14 +33,18 @@ function HeroPanel({ mode }) {
     <section className="hero-panel">
       <div>
         <p className="eyebrow">CENTRO DE CONTROL</p>
-        <h2>El catálogo activo toma forma en tiempo real.</h2>
+        <h2>Cada sismo, en su lugar del árbol.</h2>
         <p className="lede">
-          El frontend ya consulta el backend. El modo de ejecución y el reloj del escenario se
-          sincronizan con la API para reflejar el estado real del observatorio.
+          Registra terremotos, procesa en orden de llegada los reportes de las estaciones y observa
+          cómo el AVL ordena el catálogo por prioridad, magnitud e identificador. En modo estrés el
+          balanceo se aplaza hasta la recuperación global.
+        </p>
+        <p className="hero-note">
+          Territorio ficticio con reglas académicas: no es una evaluación real del riesgo sísmico.
         </p>
       </div>
       <div className="mode-badge">
-        <strong>{mode ?? "--"}</strong>
+        <strong>{mode === "stress" ? "ESTRÉS" : mode === "normal" ? "NORMAL" : "--"}</strong>
         <span>modo de ejecución</span>
       </div>
     </section>
@@ -73,7 +77,7 @@ function ScenarioControls({ state, action, updateMode, updateParameters, advance
   return (
     <section className="scenario-controls" aria-label="Controles del escenario">
       <div className="scenario-card">
-        <SectionHeader index="04" label="SIMULACIÓN" title="MODOS" />
+        <SectionHeader label="SIMULACIÓN" title="MODOS" />
         <ModeSwitcher
           value={state?.mode}
           modes={[
@@ -95,7 +99,7 @@ function ScenarioControls({ state, action, updateMode, updateParameters, advance
       </div>
 
       <div className="scenario-card">
-        <SectionHeader index="05" label="TIEMPO" title="RELOJ" />
+        <SectionHeader label="TIEMPO" title="RELOJ" />
         <ClockControls
           onAdvance={advanceClock}
           simulationTime={state?.simulation_time}
@@ -151,7 +155,7 @@ function StateActions({
 
 function TreeSection({ state, avlMetrics, bstMetrics, openNode, openEvent, action, activeEvents }) {
   return (
-    <WorkspaceCard className="tree-card" index="01" label="ESTRUCTURA" title="AVL VS BST">
+    <WorkspaceCard className="tree-card" label="ESTRUCTURA" title="AVL VS BST">
       <div className="avl-summary">
         <span>
           {state?.mode === "stress"
@@ -209,7 +213,7 @@ function TreeSection({ state, avlMetrics, bstMetrics, openNode, openEvent, actio
 function MapPanel({ zones, stations, mapPoints, associations, openEvent }) {
   const references = associations.filter((item) => item.is_reference);
   return (
-    <WorkspaceCard className="map-card" index="02" label="TERRITORIO" title="MAPA">
+    <WorkspaceCard className="map-card" label="TERRITORIO" title="MAPA">
       <TerritoryMap
         zones={zones}
         stations={stations}
@@ -239,7 +243,7 @@ function MapPanel({ zones, stations, mapPoints, associations, openEvent }) {
 function QueuePanel({ form, handleInputChange, submitReport, processNextReport, queueItems, action, autoProcess, setAutoProcess, stepDelay, setStepDelay, stations, loadBurstFile }) {
   return (
     <article className="workspace-card queue-card">
-      <SectionHeader index="03" label="RECEPCIÓN" title="FIFO" />
+      <SectionHeader label="RECEPCIÓN" title="FIFO" />
 
       <form className="report-form" onSubmit={submitReport}>
         <div className="field-grid">
@@ -334,7 +338,7 @@ function ArchivePanel({ archivedEvents, openEvent, action }) {
   return (
     <section className="archive-panel">
       <article className="workspace-card archive-card">
-        <SectionHeader index="06" label="HISTORIAL" title="ARCHIVADOS" />
+        <SectionHeader label="HISTORIAL" title="ARCHIVADOS" />
 
         <EventList
           title="Eventos archivados"
@@ -404,7 +408,7 @@ function IndicatorsPanel({ state }) {
 
   return (
     <article className="workspace-card">
-      <SectionHeader index="11" label="INDICADORES" title="CONTADORES Y RECORRIDOS" />
+      <SectionHeader label="INDICADORES" title="CONTADORES Y RECORRIDOS" />
       <div className="indicator-groups">
         {groups.map(([title, rows]) => (
           <dl key={title}>
@@ -438,7 +442,7 @@ const ORDER_LABELS = {
 function ComparisonPanel({ comparison, loadComparison, action }) {
   return (
     <article className="workspace-card">
-      <SectionHeader index="12" label="DESEMPEÑO" title="AVL VS BST POR ORDEN" />
+      <SectionHeader label="DESEMPEÑO" title="AVL VS BST POR ORDEN" />
       <div className="panel-actions">
         <ActionButton
           label="Comparar órdenes de inserción"
@@ -531,7 +535,7 @@ function ActionLogPanel({ actions }) {
   return (
     <section className="archive-panel">
       <article className="workspace-card">
-        <SectionHeader index="13" label="REGISTRO" title="HISTORIAL DE ACCIONES" />
+        <SectionHeader label="REGISTRO" title="HISTORIAL DE ACCIONES" />
         <p className="form-help">
           Cada acción muestra qué contadores cambió. Deshacer agrega una entrada; no borra la acción revertida.
         </p>
@@ -572,7 +576,7 @@ function AuditVersionsPanel({ audit, versions, refreshAudit, listVersions, saveV
   return (
     <section className="audit-version-grid">
       <article className="workspace-card">
-        <SectionHeader index="07" label="INTEGRIDAD" title="AUDITORÍA" />
+        <SectionHeader label="INTEGRIDAD" title="AUDITORÍA" />
         <div className="panel-actions">
           <ActionButton label="Actualizar auditoría" onClick={refreshAudit} secondary />
         </div>
@@ -600,7 +604,7 @@ function AuditVersionsPanel({ audit, versions, refreshAudit, listVersions, saveV
         ) : <EmptyState message="Pulsa actualizar para auditar el estado" compact />}
       </article>
       <article className="workspace-card">
-        <SectionHeader index="08" label="PERSISTENCIA" title="VERSIONES" />
+        <SectionHeader label="PERSISTENCIA" title="VERSIONES" />
         <div className="panel-actions">
           <ActionButton label="Guardar versión" onClick={save} secondary disabled={Boolean(action)} />
           <ActionButton label="Actualizar lista" onClick={listVersions} secondary />
@@ -655,7 +659,7 @@ function EventToolsPanel({ createForm, handleCreateChange, submitCreate, openEve
 
   return (
     <article className="workspace-card">
-      <SectionHeader index="09" label="CATÁLOGO" title="CREAR Y CONSULTAR" />
+      <SectionHeader label="CATÁLOGO" title="CREAR Y CONSULTAR" />
       <form className="report-form" onSubmit={submitCreate}>
         <div className="field-grid">
           {CREATE_FIELDS.map(([name, label, attributes]) => (
@@ -698,7 +702,7 @@ function QueriesPanel({ runQuery, queryResult, openEvent, action }) {
 
   return (
     <article className="workspace-card">
-      <SectionHeader index="10" label="ANÁLISIS" title="CONSULTAS" />
+      <SectionHeader label="ANÁLISIS" title="CONSULTAS" />
       <div className="query-forms">
         <form onSubmit={submit("top")}>
           <span className="query-title">Primeros k pendientes</span>

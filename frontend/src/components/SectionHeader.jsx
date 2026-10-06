@@ -1,7 +1,7 @@
-export default function SectionHeader({ index, label, title, className = "" }) {
+export default function SectionHeader({ label, title, className = "" }) {
   return (
     <div className={`card-heading ${className}`.trim()}>
-      <span>{index} / {label}</span>
+      <span>{label}</span>
       <b>{title}</b>
     </div>
   );

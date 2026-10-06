@@ -50,9 +50,9 @@ test("EventList shows event details and calls the recovery action", () => {
 });
 
 test("SectionHeader renders section metadata consistently", () => {
-  render(<SectionHeader index="01" label="ESTRUCTURA" title="AVL VS BST" />);
+  render(<SectionHeader label="ESTRUCTURA" title="AVL VS BST" />);
 
-  expect(screen.getByText("01 / ESTRUCTURA")).toBeInTheDocument();
+  expect(screen.getByText("ESTRUCTURA")).toBeInTheDocument();
   expect(screen.getByText("AVL VS BST")).toBeInTheDocument();
 });
 
@@ -178,12 +178,12 @@ test("NodePanel exposes the selected node metadata and actions", () => {
 
 test("WorkspaceCard renders the section shell and children", () => {
   render(
-    <WorkspaceCard title="Mapa" index="02" label="TERRITORIO">
+    <WorkspaceCard title="Mapa" label="TERRITORIO">
       <div>Contenido</div>
     </WorkspaceCard>
   );
 
-  expect(screen.getByText("02 / TERRITORIO")).toBeInTheDocument();
+  expect(screen.getByText("TERRITORIO")).toBeInTheDocument();
   expect(screen.getByText("Mapa")).toBeInTheDocument();
   expect(screen.getByText("Contenido")).toBeInTheDocument();
 });

@@ -1472,3 +1472,10 @@ h2 {
 .terrain-scale text {
   stroke-width: 0;
 }
+
+.hero-note {
+  margin: 14px 0 0;
+  font: 500 11px "DM Mono", monospace;
+  letter-spacing: 0.04em;
+  color: rgba(238, 244, 237, 0.62);
+}
