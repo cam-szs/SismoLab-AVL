@@ -62,6 +62,10 @@ export function useScenarioState() {
   const [editForm, setEditForm] = useState(null);
   const [queryResult, setQueryResult] = useState(null);
   const [comparison, setComparison] = useState(null);
+  // Kept apart from `state`: polling replaces `state` every 3 s and would
+  // otherwise wipe these results right after they are shown.
+  const [audit, setAudit] = useState(null);
+  const [versions, setVersions] = useState([]);
   const [autoProcess, setAutoProcess] = useState(false);
   const [stepDelay, setStepDelay] = useState(1500);
   const autoTimer = useRef(null);
@@ -244,6 +248,7 @@ export function useScenarioState() {
 
   useEffect(() => {
     refreshState();
+    listVersions();
     const timer = window.setInterval(refreshState, 3000);
     return () => window.clearInterval(timer);
   }, []);
@@ -291,7 +296,8 @@ export function useScenarioState() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount }),
       });
-      setState((previous) => ({ ...previous, mode: nextState.mode, clock: nextState.clock, scenario: nextState }));
+      await refreshState();
+      setNotice(`Reloj avanzado ${amount} h: ahora es ${nextState.simulation_time.replace("T", " ").replace("Z", "")} UTC.`);
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo avanzar el reloj");
@@ -598,7 +604,7 @@ export function useScenarioState() {
   const refreshAudit = async () => {
     try {
       const payload = await fetchJson(`${API_URL}/api/audit`);
-      setState((previous) => ({ ...(previous ?? {}), audit: payload }));
+      setAudit({ ...payload, checkedAt: new Date().toLocaleTimeString() });
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudo consultar la auditoría");
@@ -648,7 +654,7 @@ export function useScenarioState() {
   const listVersions = async () => {
     try {
       const payload = await fetchJson(`${API_URL}/api/versions`);
-      setState((previous) => ({ ...(previous ?? {}), versions: payload.versions ?? [] }));
+      setVersions(payload.versions ?? []);
       setError("");
     } catch (reason) {
       setError(reason.message || "No se pudieron consultar las versiones");
@@ -773,7 +779,7 @@ export function useScenarioState() {
     avlMetrics,
     bstMetrics,
     mapPoints,
-    audit: state?.audit ?? null,
-    versions: state?.versions ?? [],
+    audit,
+    versions,
   };
 }

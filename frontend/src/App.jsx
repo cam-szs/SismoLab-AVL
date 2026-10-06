@@ -569,6 +569,7 @@ function AuditVersionsPanel({ audit, versions, refreshAudit, listVersions, saveV
         {audit ? (
           <div className="audit-summary">
             <strong>{audit.balanced ? "Estructura válida" : "Requiere revisión"}</strong>
+            <small>Auditoría realizada a las {audit.checkedAt}; pulsa actualizar tras nuevos cambios.</small>
             <span>
               {audit.nodes_checked} nodos verificados · orden {audit.valid_order ? "correcto" : "INCORRECTO"} ·{" "}
               {audit.unbalanced_events?.length ?? 0} desbalanceados
