@@ -519,10 +519,16 @@ class ReportProcessor:
         return {"events": found, "nodes_examined": self.tree.size}
 
     def mark_reviewed(self, event_id: int) -> Event:
-        """Mark an active event reviewed without changing its AVL key."""
+        """Mark an active event reviewed without changing its AVL key.
+
+        Only a pending event can be reviewed; a later accepted correction
+        returns it to pending so it can be reviewed again.
+        """
         current = self.active_events.get(event_id)
         if current is None:
             raise KeyError(f"event {event_id} is not active")
+        if current.status.value == "reviewed":
+            raise ValueError(f"event {event_id} is already reviewed")
         updated = current.mark_reviewed()
         self.tree.update_value(current.key, updated)
         self.bst.update_value(current.key, updated)

@@ -39,6 +39,7 @@ const RULES = [
   [/^event (\d+) already exists$/, (m) => `El evento #${m[1]} ya existe`],
   [/^event (\d+) does not exist$/, (m) => `No existe ningún evento con ID #${m[1]}`],
   [/^event (\d+) is not active$/, (m) => `El evento #${m[1]} no está activo`],
+  [/^event (\d+) is already reviewed$/, (m) => `El evento #${m[1]} ya está revisado; solo vuelve a pendiente con una corrección`],
   [/^event (\d+) is not archived$/, (m) => `El evento #${m[1]} no está archivado`],
   [/^event (\d+): stored priority (\d) does not match computed (\d)$/, (m) => `Evento #${m[1]}: la prioridad guardada (${m[2]}) no coincide con la calculada (${m[3]})`],
   [/^event (\d+): stored populated_zone (\w+) does not match the zones \((\w+)\)$/, (m) => `Evento #${m[1]}: la marca de zona poblada guardada no coincide con las zonas del escenario`],

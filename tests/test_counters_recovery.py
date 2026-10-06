@@ -426,3 +426,18 @@ def test_invalid_burst_queues_nothing_and_names_the_entry(client: TestClient) ->
 @pytest.mark.parametrize("document", [{}, {"reports": []}, burst({"event_id": 1, "occurred_at": ""})])
 def test_burst_requires_complete_reports(client: TestClient, document) -> None:
     assert client.post("/api/queue/load", json={"document": document}).status_code == 400
+
+
+def test_reviewed_event_cannot_be_reviewed_again_until_corrected(client: TestClient) -> None:
+    create(client, 1, 3.0)
+    assert client.post("/api/events/1/review").status_code == 200
+    depth = len(app_module.UNDO_STACK)
+
+    again = client.post("/api/events/1/review")
+
+    assert again.status_code == 400
+    assert "already reviewed" in again.json()["error"]
+    assert len(app_module.UNDO_STACK) == depth
+
+    client.post("/api/events/1/correct", json={"magnitude": 3.5})       # back to pending
+    assert client.post("/api/events/1/review").status_code == 200

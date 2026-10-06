@@ -19,3 +19,9 @@ test("translates prefixed messages recursively", () => {
 test("leaves unknown messages unchanged", () => {
   expect(translateError("something new")).toBe("something new");
 });
+
+test("translates the already-reviewed error", () => {
+  expect(translateError("event 4 is already reviewed")).toBe(
+    "El evento #4 ya está revisado; solo vuelve a pendiente con una corrección"
+  );
+});
