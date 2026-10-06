@@ -206,11 +206,17 @@ function TreeSection({ state, avlMetrics, bstMetrics, openNode, openEvent, actio
   );
 }
 
-function MapPanel({ zones, mapPoints, associations, openEvent }) {
+function MapPanel({ zones, stations, mapPoints, associations, openEvent }) {
   const references = associations.filter((item) => item.is_reference);
   return (
     <WorkspaceCard className="map-card" index="02" label="TERRITORIO" title="MAPA">
-      <TerritoryMap zones={zones} points={mapPoints} associations={associations} onSelect={openEvent} />
+      <TerritoryMap
+        zones={zones}
+        stations={stations}
+        points={mapPoints}
+        associations={associations}
+        onSelect={openEvent}
+      />
       <div className="association-list" aria-live="polite">
         {references.length === 0 ? (
           <span className="empty-association">Sin asociaciones activas</span>
@@ -873,7 +879,13 @@ export default function App() {
         </div>
 
         <div className="operations-column">
-          <MapPanel zones={zones} mapPoints={mapPoints} associations={associations} openEvent={openEvent} />
+          <MapPanel
+            zones={zones}
+            stations={stations}
+            mapPoints={mapPoints}
+            associations={associations}
+            openEvent={openEvent}
+          />
           <QueuePanel
             form={form}
             handleInputChange={handleInputChange}

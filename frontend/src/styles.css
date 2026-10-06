@@ -969,67 +969,145 @@ h2 {
 
 /* ---------- territory map ---------- */
 
-.territory-map {
+.terrain-map {
   display: block;
   width: 100%;
   margin-top: 18px;
   border-radius: 12px;
   background: #f4f8f4;
 }
-.territory-frame {
-  fill: #eef3ee;
-  stroke: var(--line-strong);
-  stroke-width: 2;
+.terrain-sea { fill: url(#terrain-sea); }
+.terrain-sea-waves { fill: url(#terrain-waves); }
+.terrain-coast {
+  fill: none;
+  stroke: #6f9fb6;
+  stroke-width: 3;
 }
-.territory-grid line {
-  stroke: #dbe6dd;
-  stroke-width: 2;
+.terrain-river {
+  fill: none;
+  stroke: #79aac2;
+  stroke-width: 6;
+  stroke-linecap: round;
+  opacity: 0.85;
 }
-.territory-grid text,
-.territory-zone text,
-.territory-point text {
+.terrain-contour {
+  fill: none;
+  stroke: #a39675;
+  stroke-width: 1.5;
+  opacity: 0.45;
+}
+.terrain-grid line {
+  stroke: #ffffff;
+  stroke-opacity: 0.55;
+  stroke-width: 1.5;
+  stroke-dasharray: 2 8;
+}
+.terrain-grid text,
+.terrain-axis {
   font: 500 22px "DM Mono", monospace;
   fill: var(--muted);
 }
-.territory-zone rect {
+.terrain-zone-border {
+  fill: none;
+  stroke-width: 4;
+}
+.terrain-zone.populated .terrain-zone-border { stroke: #c8452b; }
+.terrain-zone.unpopulated .terrain-zone-border {
+  stroke: #6f7f74;
+  stroke-dasharray: 12 8;
+}
+.terrain-zone > rect:first-child { opacity: 0.88; }
+.terrain-zone-name {
+  font: 600 24px "Space Grotesk", sans-serif;
+  fill: #2b2f2a;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 5;
+  stroke-opacity: 0.8;
+}
+.terrain-zone-kind {
+  font: 500 17px "DM Mono", monospace;
+  fill: #4d5a52;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 4;
+  stroke-opacity: 0.8;
+}
+.terrain-station path {
+  fill: #1b3a35;
+  stroke: #ffffff;
   stroke-width: 3;
 }
-.territory-zone.populated rect {
-  fill: rgba(214, 90, 61, 0.14);
-  stroke: #d65a3d;
+.terrain-station text {
+  font: 600 18px "DM Mono", monospace;
+  fill: #1b3a35;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 4;
 }
-.territory-zone.unpopulated rect {
-  fill: rgba(99, 128, 111, 0.12);
-  stroke: #8aa294;
-  stroke-dasharray: 10 8;
-}
-.territory-link {
-  stroke: var(--primary-2);
+.terrain-link {
+  stroke: #1b3a35;
   stroke-width: 3;
-  stroke-dasharray: 6 6;
+  stroke-dasharray: 8 6;
+  opacity: 0.8;
 }
-.territory-point {
-  cursor: pointer;
-}
-.territory-point circle {
-  stroke: #fff;
+.terrain-point { cursor: pointer; }
+.terrain-epicenter {
+  stroke: #ffffff;
   stroke-width: 3;
 }
-.territory-point.prio-1 circle { fill: #63806f; }
-.territory-point.prio-2 circle { fill: #e0a83a; }
-.territory-point.prio-3 circle { fill: #c8452b; }
-.territory-point.archived circle {
-  fill: #fff;
-  stroke: #8aa294;
+.terrain-halo { opacity: 0.16; }
+.terrain-halo.inner { opacity: 0.22; }
+.terrain-point.prio-1 .terrain-epicenter,
+.terrain-point.prio-1 .terrain-halo { fill: #4f7a62; }
+.terrain-point.prio-2 .terrain-epicenter,
+.terrain-point.prio-2 .terrain-halo { fill: #d99a26; }
+.terrain-point.prio-3 .terrain-epicenter,
+.terrain-point.prio-3 .terrain-halo { fill: #c8452b; }
+.terrain-point.archived .terrain-epicenter {
+  fill: #ffffff;
+  stroke: #6f7f74;
+  stroke-dasharray: 4 3;
 }
-.territory-point text {
-  fill: var(--ink);
-}
-.territory-point circle.territory-expensive {
+.terrain-expensive {
   fill: none;
   stroke: #1b3a35;
   stroke-width: 3;
-  stroke-dasharray: 5 4;
+  stroke-dasharray: 6 5;
+}
+.terrain-point text {
+  font: 600 20px "DM Mono", monospace;
+  fill: #17211f;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 5;
+}
+.terrain-frame {
+  fill: none;
+  stroke: #7d8f84;
+  stroke-width: 3;
+}
+.terrain-north circle {
+  fill: #ffffff;
+  fill-opacity: 0.85;
+  stroke: #7d8f84;
+  stroke-width: 2;
+}
+.terrain-north .needle { fill: #c8452b; }
+.terrain-north .needle-south { fill: #7d8f84; }
+.terrain-north text,
+.terrain-scale text {
+  font: 600 20px "DM Mono", monospace;
+  fill: #2b2f2a;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 4;
+}
+.terrain-scale .dark { fill: #2b2f2a; }
+.terrain-scale .light {
+  fill: #ffffff;
+  stroke: #2b2f2a;
+  stroke-width: 2;
 }
 .territory-legend {
   display: flex;
@@ -1049,15 +1127,22 @@ h2 {
   width: 12px;
   height: 12px;
 }
-.territory-legend .swatch.zone-populated { background: rgba(214, 90, 61, 0.25); border: 1px solid #d65a3d; }
-.territory-legend .swatch.zone-unpopulated { background: rgba(99, 128, 111, 0.15); border: 1px dashed #8aa294; }
+.territory-legend .swatch.zone-populated { background: #e3b8a8; border: 2px solid #c8452b; }
+.territory-legend .swatch.zone-unpopulated { background: #d9d2bd; border: 2px dashed #6f7f74; }
+.territory-legend .station {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 12px solid #1b3a35;
+}
 .territory-legend .dot { border-radius: 50%; }
 .territory-legend .dot.prio-3 { background: #c8452b; }
-.territory-legend .dot.prio-2 { background: #e0a83a; }
-.territory-legend .dot.prio-1 { background: #63806f; }
-.territory-legend .dot.hollow { border: 2px solid #8aa294; background: #fff; }
+.territory-legend .dot.prio-2 { background: #d99a26; }
+.territory-legend .dot.prio-1 { background: #4f7a62; }
+.territory-legend .dot.hollow { border: 2px dashed #6f7f74; background: #fff; }
 .territory-legend .ring { border-radius: 50%; border: 2px dashed #1b3a35; }
-.territory-legend .link { height: 0; width: 16px; border-top: 2px dashed var(--primary-2); }
+.territory-legend .link { height: 0; width: 16px; border-top: 2px dashed #1b3a35; }
 
 @media (max-width: 800px) {
   .tools-grid,
@@ -1379,4 +1464,11 @@ h2 {
   padding: 9px 10px;
   font: 500 14px "Space Grotesk", sans-serif;
   color: var(--ink);
+}
+.terrain-scale .plate {
+  fill: #ffffff;
+  fill-opacity: 0.8;
+}
+.terrain-scale text {
+  stroke-width: 0;
 }
