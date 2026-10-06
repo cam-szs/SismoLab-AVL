@@ -1306,3 +1306,44 @@ h2 {
   justify-content: center;
   margin-top: 10px;
 }
+
+/* ---------- action feedback toasts ---------- */
+
+.toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  display: grid;
+  gap: 8px;
+  width: min(460px, calc(100vw - 32px));
+}
+.toast {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(18, 35, 28, 0.18);
+  font: 12px/1.5 "DM Mono", monospace;
+}
+.toast button {
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+.toast-error {
+  background: #fbe9e4;
+  border: 1px solid #d65a3d;
+  color: #8f2f1c;
+}
+.toast-notice {
+  background: var(--panel-strong);
+  border: 1px solid var(--line-strong);
+  color: var(--primary);
+}

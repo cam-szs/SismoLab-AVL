@@ -167,3 +167,12 @@ This project was primarily developed by the student team. The AI assistant suppo
 - **Result:** `POST /api/queue/load` validates every report (ranges, station network, occurrence time) before queuing any, keeps file order, and counts as one undoable action in the action log; the queue panel has a "Cargar ráfaga JSON" button and shows revision and position; a sample burst covers new events, confirmations, a key-changing correction, a stale report and a conflict.
 - **Human review required:** check the burst JSON schema and the all-or-nothing validation.
 - **Owner for understanding:** all three teammates.
+
+## Visible action feedback and Spanish error messages
+
+- **Date:** 2026-10-06
+- **Scope:** `frontend/src/hooks/useScenarioState.js`, `frontend/src/App.jsx`, `frontend/src/api.js`, `frontend/src/errorMessages.js`, `frontend/src/errorMessages.test.js`, `frontend/src/styles.css`, `frontend/index.html`.
+- **Request:** a rejected action (e.g. creating a duplicate id) showed no message; translate backend errors to Spanish.
+- **Result:** the 3-second state polling no longer clears action errors (connection errors use their own state); action results appear as fixed toasts that stay until dismissed; backend messages are translated in one place before display, keeping the English API contract and its tests unchanged; added a favicon.
+- **Human review required:** check the wording of the translated messages.
+- **Owner for understanding:** all three teammates.

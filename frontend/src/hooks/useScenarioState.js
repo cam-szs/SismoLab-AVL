@@ -39,8 +39,19 @@ const JSON_HEADERS = { "Content-Type": "application/json" };
 
 export function useScenarioState() {
   const [state, setState] = useState(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  // `error` and `notice` are the feedback of the last user action; they stay
+  // until dismissed or replaced. Polling only updates `connectionError`.
+  const [error, setErrorMessage] = useState("");
+  const [notice, setNoticeMessage] = useState("");
+  const [connectionError, setConnectionError] = useState("");
+  const setError = (message) => {
+    setErrorMessage(message);
+    if (message) setNoticeMessage("");
+  };
+  const setNotice = (message) => {
+    setNoticeMessage(message);
+    if (message) setErrorMessage("");
+  };
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState("");
   const [form, setForm] = useState(emptyForm);
@@ -172,7 +183,7 @@ export function useScenarioState() {
       );
       setError("");
     } catch (reason) {
-      setError(reason.message || "No se pudo crear el evento");
+      setError(`No se pudo crear el evento: ${reason.message || "error del backend"}`);
     } finally {
       setAction("");
     }
@@ -223,9 +234,9 @@ export function useScenarioState() {
     try {
       const nextState = await fetchJson(`${API_URL}/api/state`);
       setState(nextState);
-      setError("");
+      setConnectionError("");
     } catch (reason) {
-      setError(reason.message || "No se pudo consultar el backend");
+      setConnectionError(reason.message || "No se pudo consultar el backend");
     } finally {
       setLoading(false);
     }
@@ -698,6 +709,8 @@ export function useScenarioState() {
   return {
     state,
     error,
+    setError,
+    connectionError,
     notice,
     setNotice,
     loading,

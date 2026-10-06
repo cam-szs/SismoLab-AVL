@@ -1,3 +1,5 @@
+import { translateError } from "./errorMessages";
+
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
 
 export async function fetchJson(url, options) {
@@ -7,7 +9,7 @@ export async function fetchJson(url, options) {
     const detail = Array.isArray(payload?.detail)
       ? payload.detail.map((item) => `${item.loc?.at(-1) ?? ""}: ${item.msg}`).join("; ")
       : payload?.detail;
-    throw new Error(detail || payload?.error || "Error del backend");
+    throw new Error(translateError(detail || payload?.error) || "Error del backend");
   }
   return response.json();
 }

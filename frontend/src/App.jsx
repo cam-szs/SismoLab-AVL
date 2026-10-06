@@ -746,6 +746,8 @@ export default function App() {
   const {
     state,
     error,
+    setError,
+    connectionError,
     notice,
     setNotice,
     loading,
@@ -806,15 +808,28 @@ export default function App() {
 
   return (
     <main className="shell">
-      <TopBar loading={loading} error={error} />
+      <TopBar loading={loading} error={connectionError} />
 
-      {error && <p className="error" role="alert">{error}</p>}
-      {notice && (
-        <p className="notice" role="status">
-          {notice}
-          <button type="button" onClick={() => setNotice("")} aria-label="Cerrar aviso">×</button>
+      {connectionError && (
+        <p className="error" role="alert">
+          {connectionError}. Verifica que la API esté corriendo en el puerto 8000.
         </p>
       )}
+      {/* Fixed toasts so the result of an action is visible wherever the user scrolled. */}
+      <div className="toast-stack">
+        {error && (
+          <p className="toast toast-error" role="alert">
+            <span>{error}</span>
+            <button type="button" onClick={() => setError("")} aria-label="Cerrar aviso">×</button>
+          </p>
+        )}
+        {notice && (
+          <p className="toast toast-notice" role="status">
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice("")} aria-label="Cerrar aviso">×</button>
+          </p>
+        )}
+      </div>
 
       <HeroPanel mode={state?.mode} />
 
